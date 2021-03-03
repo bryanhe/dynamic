@@ -24,6 +24,7 @@ import echonet
 @click.argument("src", type=click.Path(exists=True, file_okay=False))
 @click.argument("dest", type=click.Path(file_okay=False))
 @click.option("--weights", type=click.Path(exists=True, file_okay=True), default=os.path.join("model", "r2plus1d_18_32_2_pretrained.pt"))
+@click.option("--weights", type=click.Path(exists=True, file_okay=False), default="model")
 @click.option("--label", type=click.File("r"), default="Attributes Second 133.xlsx - Sheet1.csv")
 def main(src, dest, weights, label):
 
@@ -59,10 +60,156 @@ def main(src, dest, weights, label):
     }
 
 
-    ### Normal test ###
-    # ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips="all")
-    ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips=5)
+    # ### Normal test ###
+    # # ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips="all")
+    # ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips=5)
 
+    # test_dataloader = torch.utils.data.DataLoader(ds, batch_size=1, num_workers=5, shuffle=False, pin_memory=(device.type=="cuda"))
+    # loss, yhat, y = echonet.utils.video.run_epoch(model, test_dataloader, False, None, device, save_all=False, block_size=25)
+
+    # os.makedirs(dest, exist_ok=True)
+    # with open(os.path.join(dest, "predictions.csv"), "w") as f:
+    #     for (filename, pred) in zip(ds.fnames, yhat):
+    #         f.write("{},{}\n".format(filename, int(round(pred))))
+
+    ### Miscellaneous experiments ###
+
+    # Accuracy over beats
+    # ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips="all")
+    # ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips=50)
+    # dataloader = torch.utils.data.DataLoader(ds, batch_size=1, num_workers=5, shuffle=False, pin_memory=(device.type=="cuda"))
+    # loss, yhat, y = echonet.utils.video.run_epoch(model, dataloader, False, None, device, save_all=True, block_size=25)
+    # l = (label["EF normal vs low"][[int(fn[3:-4]) for fn in ds.fnames]] == "normal").to_numpy()
+    # mask = (label["Clinically interpretable - difficult vs not"][[int(fn[3:-4]) for fn in ds.fnames]] == "not").to_numpy()
+
+    # SAMPLES = [1, 2, 3, 4, 5]
+    # auc = []
+    # for samples in SAMPLES:
+    #     p = np.array([y[::(y.shape[0] // samples)].mean() for y in yhat])
+    #     auc.append(sklearn.metrics.roc_auc_score(l[mask], p[mask]))
+    # 
+    # fig = plt.figure(figsize=(3, 3))
+    # plt.plot(SAMPLES, auc, marker=".", linewidth=1, color="k")
+    # plt.xlabel("Beats")
+    # plt.ylabel("AUROC")
+    # plt.title("Performance from Averaging")
+    # plt.ylim([0.5, 1])
+    # plt.tight_layout()
+    # os.makedirs(os.path.join(dest, "fig"), exist_ok=True)
+    # plt.savefig(os.path.join(dest, "fig", "average.pdf"))
+
+
+    # Get latent
+    ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips=5)
+    dataloader = torch.utils.data.DataLoader(ds, batch_size=1, num_workers=5, shuffle=False, pin_memory=(device.type=="cuda"))
+    model = nn.extract_features(model)
+
+    y = []
+    yhat = []
+    latent = []
+    with torch.no_grad():
+        with tqdm.tqdm(total=len(dataloader)) as pbar:
+            for (X, outcome) in dataloader:
+                X = X.to(device)
+
+                average = (len(X.shape) == 6)
+                if average:
+                    batch, n_clips, c, f, h, w = X.shape
+                    X = X.view(-1, c, f, h, w)
+
+                if block_size is None:
+                    outputs = model(X)
+                else:
+                    o = [model(X[j:(j + block_size), ...]) for j in range(0, X.shape[0], block_size)]
+                    outputs, l = list(zip(*o))
+                    outputs = torch.cat(outputs)
+                    l = torch.cat(l)
+
+                yhat.append(outputs.view(-1).to("cpu").detach().numpy())
+                latent.append(l.cpu().detach().numpy())
+
+                pbar.update()
+
+    # Fine tune
+    l = (label["EF normal vs low"][[int(fn[3:-4]) for fn in ds.fnames]] == "normal").to_numpy()
+    mask = (label["Clinically interpretable - difficult vs not"][[int(fn[3:-4]) for fn in ds.fnames]] == "not").to_numpy()
+    lat = np.vstack([l[0, :] for l in latent])
+    clf = sklearn.linear_model.LogisticRegressionCV(max_iter=1000)
+    print(sklearn.model_selection.cross_val_score(clf, lat[mask], l[mask], cv=5).mean())
+
+    # UMAP
+    ds = echonet.datasets.Echo(split="test", external_test_location=src, **kwargs, clips=5)
+    dataloader = torch.utils.data.DataLoader(ds, batch_size=1, num_workers=5, shuffle=False, pin_memory=(device.type=="cuda"))
+    # ds = torch.utils.data.Subset(ds, np.random.choice(len(ds), 133, replace=False))
+
+    y = []
+    yhat = []
+    latent = []
+    with torch.no_grad():
+        with tqdm.tqdm(total=len(dataloader)) as pbar:
+            for (X, outcome) in dataloader:
+                X = X.to(device)
+
+                average = (len(X.shape) == 6)
+                if average:
+                    batch, n_clips, c, f, h, w = X.shape
+                    X = X.view(-1, c, f, h, w)
+
+                if block_size is None:
+                    outputs = model(X)
+                else:
+                    o = [model(X[j:(j + block_size), ...]) for j in range(0, X.shape[0], block_size)]
+                    outputs, l = list(zip(*o))
+                    outputs = torch.cat(outputs)
+                    l = torch.cat(l)
+
+                yhat.append(outputs.view(-1).to("cpu").detach().numpy())
+                latent.append(l.cpu().detach().numpy())
+
+                pbar.update()
+
+    tsne = sklearn.manifold.TSNE()
+    l = np.vstack([l[0, :] for l in latent])
+    X_new = tsne.fit_transform(np.concatenate((lat, l)))
+    color = ["g", "r", "b"]
+    label = ["ER (interpretable)", "ER (difficult)", "Cardiology"]
+    group = np.array([0 if m else 1 for m in mask] + [2 for _ in range(len(ds))])
+    fig = plt.figure(figsize=(3, 3))
+    for (i, (c, l)) in enumerate(zip(color, label)):
+        plt.scatter(X_new[group == i, 0], X_new[group == i, 1], s=1, label=l)
+    
+    
+    plt.xlabel("TSNE 1")
+    plt.ylabel("TSNE 2")
+    plt.xticks([])
+    plt.yticks([])
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(dest, "fig", "tsne.pdf"))
+    plt.close(fig)
+    breakpoint()
+    
+    
+    X_new = tsne.fit_transform(lat)
+    label = ["ER (interpretable)", "ER (difficult)"]
+    group = np.array([0 if m else 1 for m in mask])
+    fig = plt.figure(figsize=(3, 3))
+    for (i, l) in enumerate(label):
+        plt.scatter(X_new[group == i, 0], X_new[group == i, 1], s=1, label=l)
+    
+    
+    plt.xlabel("TSNE 1")
+    plt.ylabel("TSNE 2")
+    plt.xticks([])
+    plt.yticks([])
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(dest, "fig", "tsne-er.pdf"))
+    plt.close(fig)
+
+
+
+    ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips=5)
     test_dataloader = torch.utils.data.DataLoader(ds, batch_size=1, num_workers=5, shuffle=False, pin_memory=(device.type=="cuda"))
     loss, yhat, y = echonet.utils.video.run_epoch(model, test_dataloader, False, None, device, save_all=False, block_size=25)
 
