@@ -1,11 +1,13 @@
 """EchoNet-Dynamic Dataset."""
 
 import pathlib
+import random
 import os
 import collections
 import pandas
 
 import numpy as np
+import scipy
 import skimage.draw
 import torchvision
 import echonet
@@ -67,6 +69,7 @@ class Echo(torchvision.datasets.VisionDataset):
                  max_length=250,
                  clips=1,
                  pad=None,
+                 rotate=None,
                  noise=None,
                  target_transform=None,
                  external_test_location=None):
@@ -88,6 +91,7 @@ class Echo(torchvision.datasets.VisionDataset):
         self.period = period
         self.clips = clips
         self.pad = pad
+        self.rotate = rotate
         self.noise = noise
         self.target_transform = target_transform
         self.external_test_location = external_test_location
@@ -261,6 +265,9 @@ class Echo(torchvision.datasets.VisionDataset):
             temp[:, :, self.pad:-self.pad, self.pad:-self.pad] = video  # pylint: disable=E1130
             i, j = np.random.randint(0, 2 * self.pad, 2)
             video = temp[:, :, i:(i + h), j:(j + w)]
+
+        if self.rotate is not None:
+            video = scipy.ndimage.rotate(video, self.rotate * (2 * random.random() - 1), (2, 3), reshape=False)
 
         return video, target
 
