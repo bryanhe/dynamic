@@ -4,12 +4,14 @@ import pathlib
 import random
 import os
 import collections
+import pandas
 
 import numpy as np
 import scipy
 import skimage.draw
 import torch.utils.data
 import echonet
+import tqdm
 
 
 class Echo(torch.utils.data.Dataset):
@@ -98,45 +100,47 @@ class Echo(torch.utils.data.Dataset):
         if self.split == "EXTERNAL_TEST":
             self.fnames = sorted(os.listdir(self.external_test_location))
         else:
+            import time
+            start = time.time()
+            print("START", flush=True)
             with open(self.folder / "FileList.csv") as f:
-                self.header = f.readline().strip().split(",")
-                filenameIndex = self.header.index("FileName")
-                splitIndex = self.header.index("Split")
+                data = pandas.read_csv(f)
+            data["Split"].map(lambda x: x.upper())
 
-                for line in f:
-                    lineSplit = line.strip().split(',')
+            if self.split != "ALL":
+                data = data[data["Split"] == self.split]
 
-                    fileName = lineSplit[filenameIndex]
-                    fileMode = lineSplit[splitIndex].upper()
+            # TODO: check that each file exists
 
-                    if self.split in ["all", fileMode] and os.path.exists(self.folder / "Videos" / fileName):
-                        self.fnames.append(fileName)
-                        self.outcome.append(lineSplit)
+            self.header = data.columns.tolist()
+            self.fnames = data["FileName"].tolist()
+            self.outcome = data.values.tolist()
+            print(time.time() - start, flush=True)
 
-            self.frames = collections.defaultdict(list)
-            self.trace = collections.defaultdict(_defaultdict_of_lists)
+            # self.frames = collections.defaultdict(list)
+            # self.trace = collections.defaultdict(_defaultdict_of_lists)
 
-            with open(self.folder / "VolumeTracings.csv") as f:
-                header = f.readline().strip().split(",")
-                assert header == ["FileName", "X1", "Y1", "X2", "Y2", "Frame"]
+            # with open(self.folder / "VolumeTracings.csv") as f:
+            #     header = f.readline().strip().split(",")
+            #     assert header == ["FileName", "X1", "Y1", "X2", "Y2", "Frame"]
 
-                for line in f:
-                    filename, x1, y1, x2, y2, frame = line.strip().split(',')
-                    x1 = float(x1)
-                    y1 = float(y1)
-                    x2 = float(x2)
-                    y2 = float(y2)
-                    frame = int(frame)
-                    if frame not in self.trace[filename]:
-                        self.frames[filename].append(frame)
-                    self.trace[filename][frame].append((x1, y1, x2, y2))
-            for filename in self.frames:
-                for frame in self.frames[filename]:
-                    self.trace[filename][frame] = np.array(self.trace[filename][frame])
+            #     for line in f:
+            #         filename, x1, y1, x2, y2, frame = line.strip().split(',')
+            #         x1 = float(x1)
+            #         y1 = float(y1)
+            #         x2 = float(x2)
+            #         y2 = float(y2)
+            #         frame = int(frame)
+            #         if frame not in self.trace[filename]:
+            #             self.frames[filename].append(frame)
+            #         self.trace[filename][frame].append((x1, y1, x2, y2))
+            # for filename in self.frames:
+            #     for frame in self.frames[filename]:
+            #         self.trace[filename][frame] = np.array(self.trace[filename][frame])
 
-            keep = [len(self.frames[os.path.splitext(f)[0]]) >= 2 for f in self.fnames]
-            self.fnames = [f for (f, k) in zip(self.fnames, keep) if k]
-            self.outcome = [f for (f, k) in zip(self.outcome, keep) if k]
+            # keep = [len(self.frames[os.path.splitext(f)[0]]) >= 2 for f in self.fnames]
+            # self.fnames = [f for (f, k) in zip(self.fnames, keep) if k]
+            # self.outcome = [f for (f, k) in zip(self.outcome, keep) if k]
 
     def __getitem__(self, index):
         # Find filename of video
