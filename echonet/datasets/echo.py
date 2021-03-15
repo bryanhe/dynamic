@@ -11,6 +11,7 @@ import scipy
 import skimage.draw
 import torchvision
 import echonet
+import tqdm
 
 
 class Echo(torchvision.datasets.VisionDataset):
