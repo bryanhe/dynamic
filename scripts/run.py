@@ -23,7 +23,6 @@ import echonet
 @click.command()
 @click.argument("src", type=click.Path(exists=True, file_okay=False))
 @click.argument("dest", type=click.Path(file_okay=False))
-@click.option("--weights", type=click.Path(exists=True, file_okay=True), default=os.path.join("model", "r2plus1d_18_32_2_pretrained.pt"))
 @click.option("--weights", type=click.Path(exists=True, file_okay=False), default="model")
 @click.option("--label", type=click.File("r"), default="Attributes Second 133.xlsx - Sheet1.csv")
 def main(src, dest, weights, label):
@@ -60,6 +59,7 @@ def main(src, dest, weights, label):
     }
 
 
+<<<<<<< HEAD
     # ### Normal test ###
     # # ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips="all")
     # ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips=5)
@@ -209,7 +209,10 @@ def main(src, dest, weights, label):
 
 
 
+    ### Normal test ###
+    # ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips="all")
     ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips=5)
+
     test_dataloader = torch.utils.data.DataLoader(ds, batch_size=1, num_workers=5, shuffle=False, pin_memory=(device.type=="cuda"))
     loss, yhat, y = echonet.utils.video.run_epoch(model, test_dataloader, False, None, device, save_all=False, block_size=25)
 
