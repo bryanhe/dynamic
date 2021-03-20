@@ -16,23 +16,19 @@ with open("predictions/predictions_mirror.csv") as f:
     for l in f:
         ef_mirror.append(float(l.split(",")[-1]))
 
-# bins = np.arange(102) - 0.5
-# mul5 = ((bins % 5) > 4)
-# color = ["gray" if m else "red" for m in mul5]
-# fig = plt.figure(figsize=(3, 3))
-# plt.hist(ef, bins=np.arange(101) - 0.5)
-# plt.savefig("hist.pdf")
-# plt.xlabel("EF")
-# plt.ylabel("# Videos")
-# plt.tight_layout()
-# plt.close(fig)
-
-ef = list(map(round, ef))
-ef = collections.Counter(ef)
 fig = plt.figure(figsize=(3, 3))
-plt.bar(sorted(ef), [ef[x] for x in sorted(ef)], color=["red" if x % 5 == 0 else "gray" for x in sorted(ef)])
+plt.hist([ef_mirror, ef_original], bins=range(0, 101, 5))
+plt.legend(["Mirror", "Original"])
 plt.xlabel("EF")
 plt.ylabel("# Videos")
 plt.tight_layout()
 plt.savefig("hist.pdf")
+plt.close(fig)
+
+fig = plt.figure(figsize=(3, 3))
+plt.scatter(ef_mirror, ef_original, s=1)
+plt.xlabel("EF (mirror)")
+plt.ylabel("EF (original)")
+plt.tight_layout()
+plt.savefig("scatter.pdf")
 plt.close(fig)
