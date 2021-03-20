@@ -17,7 +17,8 @@ def main(src, dest):
     for filename in tqdm.tqdm(sorted(os.listdir(src))):
         # if filename in ["VID11216.mp4", "VID11713.mp4", "VID14180.mp4", "VID14278.mp4", "VID14441.mp4", "VID1480.mp4", "VID1481.mp4", "VID16642.mp4", "VID16885.mp4"]:
         #     continue
-        output = os.path.join(dest, os.path.splitext(filename)[0] + ".avi")
+        # output = os.path.join(dest, os.path.splitext(filename)[0] + ".avi")
+        output = os.path.join(dest, filename)
         if not os.path.isfile(output):
             print(filename)
             capture = cv2.VideoCapture(os.path.join(src, filename))

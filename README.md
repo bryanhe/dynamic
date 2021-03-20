@@ -176,3 +176,7 @@ done
 
 import echonet
 echonet.utils.video.run()
+
+  for i in `ls er_videos_2`; do ffmpeg -i er_videos_2/${i} er_videos_2_mp4/${i%.avi}.mp4; done
+
+  scripts/server/server.py er_videos_2_mp4/ labels
