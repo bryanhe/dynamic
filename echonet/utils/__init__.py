@@ -36,7 +36,7 @@ def loadvideo(filename: str) -> np.ndarray:
     frame_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    v = np.zeros((frame_count, frame_width, frame_height, 3), np.uint8)
+    v = np.zeros((frame_count, frame_height, frame_width, 3), np.uint8)
 
     for count in range(frame_count):
         ret, frame = capture.read()
@@ -67,7 +67,15 @@ def savevideo(filename: str, array: np.ndarray, fps: typing.Union[float, int] = 
 
     if c != 3:
         raise ValueError("savevideo expects array of shape (channels=3, frames, height, width), got shape ({})".format(", ".join(map(str, array.shape))))
-    fourcc = cv2.VideoWriter_fourcc('M', 'J', 'P', 'G')
+    if os.path.splitext(filename)[-1] == ".avi":
+        fourcc = cv2.VideoWriter_fourcc('M', 'J', 'P', 'G')
+    elif os.path.splitext(filename)[-1] == ".mp4":
+        fourcc = cv2.VideoWriter_fourcc('M', 'P', '4', 'V')
+        # https://stackoverflow.com/questions/49530857/python-opencv-video-format-play-in-browser
+        fourcc = cv2.VideoWriter_fourcc(*'H264')
+        fourcc = 0x00000021
+        fourcc = 0x00000021
+        fourcc = cv2.VideoWriter_fourcc('V','P','8','0')
     out = cv2.VideoWriter(filename, fourcc, fps, (width, height))
 
     for i in range(f):
