@@ -23,7 +23,7 @@ import echonet
 @click.command()
 @click.argument("src", type=click.Path(exists=True, file_okay=False))
 @click.argument("dest", type=click.Path(file_okay=False))
-@click.option("--weights", type=click.Path(exists=True, file_okay=False), default="model")
+@click.option("--weights", type=click.Path(exists=True, file_okay=True), default=os.path.join("model", "r2plus1d_18_32_2_pretrained.pt"))
 @click.option("--label", type=click.File("r"), default="Attributes Second 133.xlsx - Sheet1.csv")
 def main(src, dest, weights, label):
 
@@ -41,7 +41,7 @@ def main(src, dest, weights, label):
     model.fc = torch.nn.Linear(model.fc.in_features, 1)
     model = torch.nn.DataParallel(model)
     model.to(device)
-    checkpoint = torch.load(os.path.join(weights, "r2plus1d_18_32_2_pretrained.pt"))
+    checkpoint = torch.load(weights)
     model.load_state_dict(checkpoint['state_dict'])
     model.eval()
 
@@ -59,17 +59,24 @@ def main(src, dest, weights, label):
     }
 
 
-    # ### Normal test ###
-    # # ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips="all")
-    # ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips=5)
+    ### Normal test ###
+    # ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips="all")
+    ds = echonet.datasets.Echo(split="external_test", external_test_location=src, **kwargs, clips=5)
 
-    # test_dataloader = torch.utils.data.DataLoader(ds, batch_size=1, num_workers=5, shuffle=False, pin_memory=(device.type=="cuda"))
-    # loss, yhat, y = echonet.utils.video.run_epoch(model, test_dataloader, False, None, device, save_all=False, block_size=25)
+    test_dataloader = torch.utils.data.DataLoader(ds, batch_size=1, num_workers=5, shuffle=False, pin_memory=(device.type=="cuda"))
+    loss, yhat, y = echonet.utils.video.run_epoch(model, test_dataloader, False, None, device, save_all=False, block_size=25)
 
-    # os.makedirs(dest, exist_ok=True)
-    # with open(os.path.join(dest, "predictions.csv"), "w") as f:
-    #     for (filename, pred) in zip(ds.fnames, yhat):
-    #         f.write("{},{}\n".format(filename, int(round(pred))))
+    l = (label["EF normal vs low"][[int(fn[3:-4]) for fn in ds.fnames]] == "normal").to_numpy()
+    mask = (label["Clinically interpretable - difficult vs not"][[int(fn[3:-4]) for fn in ds.fnames]] == "not").to_numpy()
+    print(echonet.utils.bootstrap(l[mask], yhat[mask], sklearn.metrics.roc_auc_score))
+    print(sklearn.metrics.roc_auc_score(l[mask], yhat[mask]))
+    exit()
+    breakpoint()
+
+    os.makedirs(dest, exist_ok=True)
+    with open(os.path.join(dest, "predictions.csv"), "w") as f:
+        for (filename, pred) in zip(ds.fnames, yhat):
+            f.write("{},{}\n".format(filename, int(round(pred))))
 
     ### Miscellaneous experiments ###
 
