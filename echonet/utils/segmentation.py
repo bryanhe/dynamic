@@ -16,14 +16,14 @@ import tqdm
 import echonet
 
 
-def run(num_epochs=50,
+def run(num_epochs=33,
         modelname="deeplabv3_resnet50",
         pretrained=False,
         output=None,
         device=None,
         n_train_patients=None,
-        num_workers=4,
-        batch_size=20,
+        num_workers=8,
+        batch_size=8,
         seed=0,
         lr_step_period=None,
         save_segmentation=False,
@@ -85,14 +85,20 @@ def run(num_epochs=50,
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Set up model
-    model = torchvision.models.segmentation.__dict__[modelname](pretrained=pretrained, aux_loss=False)
+    # model = torchvision.models.segmentation.__dict__[modelname](pretrained=pretrained, aux_loss=False)
+    model = echonet.models.r3d_18()
 
     p1 = 0.09
     p2 = 1 / 112 / 112
-    model.classifier[-1] = torch.nn.Conv2d(model.classifier[-1].in_channels, 3, kernel_size=model.classifier[-1].kernel_size)  # change number of outputs to 1
-    w = [math.log(p1), math.log(p2), math.log(p2)]
+    p3 = 1 / 8
+    # model.classifier = torch.nn.Conv3d(model.classifier.in_channels, 3, kernel_size=model.classifier.kernel_size)  # change number of outputs to 1
+    model.classifier[-1] = torch.nn.Conv3d(model.classifier[-1].in_channels, 4, kernel_size=model.classifier[-1].kernel_size)  # change number of outputs to 1
+    # model.classifier[-1] = torch.nn.Conv2d(model.classifier[-1].in_channels, 3, kernel_size=model.classifier[-1].kernel_size)  # change number of outputs to 1
+    w = [math.log(p1), math.log(p2), math.log(p2), math.log(p3), math.log(p3)]
     model.classifier[-1].weight.data[:] = 0
     model.classifier[-1].bias.data = torch.as_tensor(w)
+    # model.classifier.weight.data[:] = 0
+    # model.classifier.bias.data = torch.as_tensor(w)
 
     if device.type == "cuda":
         model = torch.nn.DataParallel(model)
@@ -100,7 +106,7 @@ def run(num_epochs=50,
 
     # Set up optimizer
     optim = torch.optim.SGD(model.parameters(), lr=1e-5, momentum=0.9)
-    op_ft = torch.optim.SGD(model.module.classifier[-1].parameters(), lr=1e-6, momentum=0.9)
+    # op_ft = torch.optim.SGD(model.module.classifier[-1].parameters(), lr=1e-6, momentum=0.9)
     if lr_step_period is None:
         lr_step_period = math.inf
     scheduler = torch.optim.lr_scheduler.StepLR(optim, lr_step_period)
@@ -138,7 +144,7 @@ def run(num_epochs=50,
 
     # breakpoint()
 
-    mean, std = echonet.utils.get_mean_and_std(echonet.datasets.Echo(split="train"))
+    mean, std = echonet.utils.get_mean_and_std(echonet.datasets.Echo(split="train"), num_workers=num_workers)
     tasks = ["LargeFrame", "SmallFrame", "LargeTrace", "SmallTrace", "LargeApex", "SmallApex", "LargeBase", "SmallBase"]
     kwargs = {
         "target_type": tasks,
@@ -175,6 +181,9 @@ def run(num_epochs=50,
             f.write("Resuming from epoch {}\n".format(epoch_resume))
         except FileNotFoundError:
             f.write("Starting run from scratch\n")
+        # manually lower lr to 1e-6 (from 1e-5) at beginning of epoch 14 (0-index)
+        optim.param_groups[0]["lr"] = 1e-6
+        print(optim)
 
         for epoch in range(epoch_resume, num_epochs):
             print("Epoch #{}".format(epoch), flush=True)
@@ -221,6 +230,7 @@ def run(num_epochs=50,
         # Load best weights
         checkpoint = torch.load(os.path.join(output, "best.pt"))
         model.load_state_dict(checkpoint['state_dict'])
+        model.eval()
         f.write("Best validation loss {} from epoch {}\n".format(checkpoint["loss"], checkpoint["epoch"]))
 
         if run_test:
@@ -235,6 +245,17 @@ def run(num_epochs=50,
                 overall_dice = 2 * (large_inter + small_inter) / (large_union + large_inter + small_union + small_inter)
                 large_dice = 2 * large_inter / (large_union + large_inter)
                 small_dice = 2 * small_inter / (small_union + small_inter)
+
+                for (title, dice) in [("Overall", overall_dice), ("Diastole", large_dice), ("Systole", small_dice)]:
+                    fig = plt.figure(figsize=(3, 2))
+                    plt.hist(large_dice, bins=np.arange(0, 1 + 1e-6, 0.01))
+                    plt.xlabel("DSC")
+                    plt.ylabel("Videos")
+                    plt.xlim([0, 1])
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(output, "hist_{}_{}.pdf".format(title.lower(), split)))
+                    plt.close(fig)
+
                 with open(os.path.join(output, "{}_dice.csv".format(split)), "w") as g:
                     g.write("Filename, Overall, Large, Small\n")
                     for (filename, overall, large, small) in zip(dataset.fnames, overall_dice, large_dice, small_dice):
@@ -246,7 +267,7 @@ def run(num_epochs=50,
                 f.flush()
 
 
-    tasks = ["EF", "LargeFrame", "SmallFrame", "LargeTrace", "SmallTrace", "LargeApex", "SmallApex", "LargeBase", "SmallBase"]
+    tasks = ["Filename", "EF", "LargeFrame", "SmallFrame", "LargeTrace", "SmallTrace", "LargeApex", "SmallApex", "LargeBase", "SmallBase"]
     kwargs = {
         "target_type": tasks,
         "mean": mean,
@@ -257,37 +278,79 @@ def run(num_epochs=50,
                                              batch_size=batch_size, num_workers=num_workers, shuffle=False, pin_memory=(device.type == "cuda"))
 
 
+    model.eval()
     ef_real = []
     ef_pred = []
+    os.makedirs(os.path.join(output, "disk"), exist_ok=True)
     with torch.no_grad():
         with tqdm.tqdm(total=len(dataloader)) as pbar:
-            for (_, (ef, large_frame, small_frame, large_trace, small_trace, large_apex, small_apex, large_base, small_base)) in dataloader:
+            for (_, (filename, ef, large_frame, small_frame, large_trace, small_trace, large_apex, small_apex, large_base, small_base)) in dataloader:
                 ef_real.extend(ef.numpy())
+                large_mask = ~torch.isnan(large_trace).any(3).any(2)
+                small_mask = ~torch.isnan(small_trace).any(3).any(2)
+
                 # Run prediction for diastolic frames and compute loss
                 large_frame = large_frame.to(device)
                 yhat = model(large_frame)["out"]
+
+                large_trace = large_trace[large_mask]
+                yhat = yhat.transpose(1, 2)[large_mask]
                 # trace = torch.sigmoid(yhat[:, 0, :, :])
                 # apex = torch.sigmoid(yhat[:, 1, :, :])
                 # base = torch.sigmoid(yhat[:, 2, :, :])
                 trace = yhat[:, 0, :, :]
                 apex = yhat[:, 1, :, :]
                 base = yhat[:, 2, :, :]
+                edv = []
+                for (fn, t) in zip(filename, trace.cpu().numpy()):
+                    os.makedirs(os.path.join(output, "disk", os.path.splitext(fn)[0]), exist_ok=True)
+                    v, *_ = echonet.utils.volume.calculateVolumeMainAxisTopShift(t, 20, pointShifts=1, output=os.path.join(output, "disk", os.path.splitext(fn)[0], "diastole_computer"))
+                    assert len(v.values()) == 1
+                    edv.append(list(v.values())[0])
+                for (fn, t) in zip(filename, large_trace.cpu().numpy()):
+                    v, *_ = echonet.utils.volume.calculateVolumeMainAxisTopShift(t, 20, pointShifts=1, output=os.path.join(output, "disk", os.path.splitext(fn)[0], "diastole_human"))
+                    assert len(v.values()) == 1
+                    # edv.append(list(v.values())[0])
 
-                edv = ((trace > 0).sum(2) ** 2).sum(1)
+
+                # edv = ((trace > 0).sum(2) ** 2).sum(1)
 
                 small_frame = small_frame.to(device)
                 yhat = model(small_frame)["out"]
+
+                small_trace = small_trace[small_mask]
+                yhat = yhat.transpose(1, 2)[small_mask]
                 # trace = torch.sigmoid(yhat[:, 0, :, :])
                 # apex = torch.sigmoid(yhat[:, 1, :, :])
                 # base = torch.sigmoid(yhat[:, 2, :, :])
                 trace = yhat[:, 0, :, :]
                 apex = yhat[:, 1, :, :]
                 base = yhat[:, 2, :, :]
-                esv = ((trace > 0).sum(2) ** 2).sum(1)
-                ef_pred.extend((100 * (1 - esv / edv)).cpu().numpy())
+                # trace = trace.cpu().numpy()
+                # trace = small_trace.cpu().numpy()
+                esv = []
+                for (fn, t) in zip(filename, trace.cpu().numpy()):
+                    v, *_ = echonet.utils.volume.calculateVolumeMainAxisTopShift(t, 20, pointShifts=1, output=os.path.join(output, "disk", os.path.splitext(fn)[0], "systole_computer"))
+                    assert len(v.values()) == 1
+                    esv.append(list(v.values())[0])
+                for (fn, t) in zip(filename, small_trace.cpu().numpy()):
+                    v, *_ = echonet.utils.volume.calculateVolumeMainAxisTopShift(t, 20, pointShifts=1, output=os.path.join(output, "disk", os.path.splitext(fn)[0], "systole_human"))
+                    assert len(v.values()) == 1
+                    # esv.append(list(v.values())[0])
+                # esv = ((trace > 0).sum(2) ** 2).sum(1)
+
+                edv = np.array(edv)
+                esv = np.array(esv)
+                ef_pred.extend((100 * (1 - esv / edv)))
+
+                for (fn, ef) in zip(filename, 1 - esv / edv):
+                    if ef < 0:
+                        print(fn)
+
+                # for (p, fn) in zip(
 
                 print(sklearn.metrics.r2_score(ef_real, ef_pred))
-    breakpoint()
+                pbar.update()
     fig = plt.figure(figsize=(3, 3))
     plt.scatter(ef_real, ef_pred, s=1, color="k")
     plt.xlabel("Real")
@@ -297,7 +360,10 @@ def run(num_epochs=50,
     plt.savefig("seg_ef_prediction.pdf")
     plt.close(fig)
     mask = [0 < e < 100 for e in ef_pred]
-    sklearn.metrics.r2_score([e for (e, m) in zip(ef_real, mask) if m], [e for (e, m) in zip(ef_pred, mask) if m])
+    mask = [abs(r - p) < 20 for (r, p) in zip(ef_real, ef_pred)]
+    print(sklearn.metrics.r2_score([e for (e, m) in zip(ef_real, mask) if m], [e for (e, m) in zip(ef_pred, mask) if m]))
+    print(scipy.stats.linregress([e for (e, m) in zip(ef_real, mask) if m], [e for (e, m) in zip(ef_pred, mask) if m]))
+    breakpoint()
 
 
 
@@ -478,27 +544,32 @@ def run_epoch(model, dataloader, train, optim, device):
         with tqdm.tqdm(total=len(dataloader)) as pbar:
             for (_, (large_frame, small_frame, large_trace, small_trace, large_apex, small_apex, large_base, small_base)) in dataloader:
                 # Count number of pixels in/out of human segmentation
-                pos += (large_trace == 1).sum().item()
-                pos += (small_trace == 1).sum().item()
-                neg += (large_trace == 0).sum().item()
-                neg += (small_trace == 0).sum().item()
+                large_mask = ~torch.isnan(large_trace).any(3).any(2)
+                small_mask = ~torch.isnan(small_trace).any(3).any(2)
+                pos += (large_trace[large_mask] == 1).sum().item()
+                pos += (small_trace[small_mask] == 1).sum().item()
+                neg += (large_trace[large_mask] == 0).sum().item()
+                neg += (small_trace[small_mask] == 0).sum().item()
 
                 # Count number of pixels in/out of computer segmentation
-                pos_pix += (large_trace == 1).sum(0).to("cpu").detach().numpy()
-                pos_pix += (small_trace == 1).sum(0).to("cpu").detach().numpy()
-                neg_pix += (large_trace == 0).sum(0).to("cpu").detach().numpy()
-                neg_pix += (small_trace == 0).sum(0).to("cpu").detach().numpy()
+                pos_pix += (large_trace[large_mask] == 1).sum(0).numpy()
+                pos_pix += (small_trace[small_mask] == 1).sum(0).numpy()
+                neg_pix += (large_trace[large_mask] == 0).sum(0).numpy()
+                neg_pix += (small_trace[small_mask] == 0).sum(0).numpy()
 
                 # Run prediction for diastolic frames and compute loss
                 large_frame = large_frame.to(device)
                 target = torch.stack((large_trace, large_apex, large_base), dim=1)
+                target = target.transpose(1, 2)[large_mask]
                 target = target.to(device)
                 y_large = model(large_frame)["out"]
+                y_large = y_large.transpose(1, 2)[large_mask]
                 # loss_large = torch.nn.functional.binary_cross_entropy_with_logits(y_large, target, reduction="sum")
                 l = torch.nn.functional.binary_cross_entropy_with_logits(y_large, target, reduction="none")
                 l = l.sum((0, 2, 3))
                 l[1:] *= 100
                 loss_large = l
+                large_trace = large_trace[large_mask]
                 # Compute pixel intersection and union between human and computer segmentations
                 large_inter += np.logical_and(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum()
                 large_union += np.logical_or(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum()
@@ -508,12 +579,15 @@ def run_epoch(model, dataloader, train, optim, device):
                 # Run prediction for systolic frames and compute loss
                 small_frame = small_frame.to(device)
                 target = torch.stack((small_trace, small_apex, small_base), dim=1)
+                target = target.transpose(1, 2)[small_mask]
                 target = target.to(device)
                 y_small = model(small_frame)["out"]
+                y_small = y_small.transpose(1, 2)[small_mask]
                 l = torch.nn.functional.binary_cross_entropy_with_logits(y_small, target, reduction="none")
                 l = l.sum((0, 2, 3))
                 l[1:] *= 100
                 loss_small = l
+                small_trace = small_trace[small_mask]
                 # Compute pixel intersection and union between human and computer segmentations
                 small_inter += np.logical_and(y_small[:, 0, :, :].detach().cpu().numpy() > 0., small_trace[:, :, :].detach().cpu().numpy() > 0.).sum()
                 small_union += np.logical_or(y_small[:, 0, :, :].detach().cpu().numpy() > 0., small_trace[:, :, :].detach().cpu().numpy() > 0.).sum()
