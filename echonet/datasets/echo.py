@@ -1,6 +1,5 @@
 """EchoNet-Dynamic Dataset."""
 
-import math
 import pathlib
 import random
 import os
@@ -213,16 +212,8 @@ class Echo(torchvision.datasets.VisionDataset):
 
         # Gather targets
         target = []
-        key = os.path.splitext(self.fnames[index])[0]
-        frames = video.shape[1]
-        window = 8
-        lfi = self.frames[key][-1] # large frame index
-        sfi = self.frames[key][0] # small frame index
-        lfs = random.randint(max(0, lfi - window + 1), min(lfi, frames - window))  # large clip start
-        sfs = random.randint(max(0, sfi - window + 1), min(sfi, frames - window))  # small clip start
-
-
         for t in self.target_type:
+            key = os.path.splitext(self.fnames[index])[0]
             if t == "Filename":
                 target.append(self.fnames[index])
             elif t == "LargeIndex":
@@ -233,48 +224,21 @@ class Echo(torchvision.datasets.VisionDataset):
                 # Largest (diastolic) frame is first
                 target.append(np.int(self.frames[key][0]))
             elif t == "LargeFrame":
-                target.append(video[:, lfs:(lfs + window), :, :])
+                target.append(video[:, self.frames[key][-1], :, :])
             elif t == "SmallFrame":
-                target.append(video[:, sfs:(sfs + window), :, :])
+                target.append(video[:, self.frames[key][0], :, :])
             elif t in ["LargeTrace", "SmallTrace"]:
                 if t == "LargeTrace":
-                    trace = self.trace[key][self.frames[key][-1]]
-                    offset = lfi - lfs
+                    t = self.trace[key][self.frames[key][-1]]
                 else:
-                    trace = self.trace[key][self.frames[key][0]]
-                    offset = sfi - sfs
-                x1, y1, x2, y2 = trace[:, 0], trace[:, 1], trace[:, 2], trace[:, 3]
+                    t = self.trace[key][self.frames[key][0]]
+                x1, y1, x2, y2 = t[:, 0], t[:, 1], t[:, 2], t[:, 3]
                 x = np.concatenate((x1[1:], np.flip(x2[1:])))
                 y = np.concatenate((y1[1:], np.flip(y2[1:])))
 
                 r, c = skimage.draw.polygon(np.rint(y).astype(np.int), np.rint(x).astype(np.int), (video.shape[2], video.shape[3]))
-                mask = np.full((window, video.shape[2], video.shape[3]), math.nan, np.float32)
-                mask[offset, :, :] = 0
-                mask[offset, r, c] = 1
-                target.append(mask)
-            elif t in ["LargeApex", "LargeBase", "SmallApex", "SmallBase"]:
-                if t == "LargeApex" or t == "LargeBase":
-                    trace = self.trace[key][self.frames[key][-1]]
-                    offset = lfi - lfs
-                else:
-                    trace = self.trace[key][self.frames[key][0]]
-                    offset = sfi - sfs
-
-                if t == "LargeApex" or t == "SmallApex":
-                    x, y = trace[0, 0], trace[0, 1]
-                else:
-                    x, y = trace[0, 2], trace[0, 3]
-                x = int(x)
-                y = int(y)
-
-                # mask = np.zeros((video.shape[2], video.shape[3]), np.float32)
-                mask = np.full((window, video.shape[2], video.shape[3]), math.nan, np.float32)
-                mask[offset, :, :] = 0
-                try:
-                    # TODO: why does this sometimes fall off image
-                    mask[offset, y, x] = 1
-                except IndexError:
-                    pass
+                mask = np.zeros((video.shape[2], video.shape[3]), np.float32)
+                mask[r, c] = 1
                 target.append(mask)
             else:
                 if self.split == "CLINICAL_TEST" or self.split == "EXTERNAL_TEST":
