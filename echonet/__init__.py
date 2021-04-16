@@ -10,4 +10,18 @@ import echonet.datasets as datasets
 import echonet.models as models
 import echonet.utils as utils
 
-__all__ = ["__version__", "config", "datasets", "models", "utils"]
+import click
+
+
+@click.group()
+def main():
+    pass
+
+
+del click
+
+
+main.add_command(utils.segmentation.run)
+main.add_command(utils.video.run)
+
+__all__ = ["__version__", "config", "datasets", "main", "models", "utils"]

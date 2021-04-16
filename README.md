@@ -71,7 +71,7 @@ We describe our full hyperparameter sweep in the next section.
 
     cmd="import echonet; echonet.utils.segmentation.run(modelname=\"deeplabv3_resnet50\",
                                                         save_segmentation=True,
-                                                        pretrained=False)"
+                                                        pretrained=False,output='output/segmentation/psax')"
     python3 -c "${cmd}"
 
 This creates a directory named `output/segmentation/deeplabv3_resnet50_random/`, which will contain
@@ -180,3 +180,29 @@ echonet.utils.video.run()
   for i in `ls er_videos_2`; do ffmpeg -i er_videos_2/${i} er_videos_2_mp4/${i%.avi}.mp4; done
 
   scripts/server/server.py er_videos_2_mp4/ labels
+
+echonet video --data_dir data/pediatric/A4C --num_epochs 45 --output output/ef/a4c_scratch/
+echonet video --data_dir data/pediatric/A4C --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 0 --output output/ef/a4c_blind/
+echonet video --data_dir data/pediatric/A4C --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-4 --output output/ef/a4c_lr_1e-4/
+echonet video --data_dir data/pediatric/A4C --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-5 --output output/ef/a4c_lr_1e-5/
+echonet video --data_dir data/pediatric/A4C --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 1000 --lr 1e-6 --output output/ef/a4c_lr_1e-6/
+echonet video --data_dir data/pediatric/A4C --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 10 --lr 1e-5 --last --output output/ef/a4c_transfer/
+
+echonet video --data_dir data/pediatric/PSAX --num_epochs 45 --output output/ef/psax_scratch/
+echonet video --data_dir data/pediatric/PSAX --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 0 --output output/ef/psax_blind/
+echonet video --data_dir data/pediatric/PSAX --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-4 --output output/ef/psax_lr_1e-4/
+echonet video --data_dir data/pediatric/PSAX --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-5 --output output/ef/psax_lr_1e-5/
+echonet video --data_dir data/pediatric/PSAX --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 1000 --lr 1e-6 --output output/ef/psax_lr_1e-6/
+echonet video --data_dir data/pediatric/PSAX --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 10 --lr 1e-5 --last --output output/ef/psax_transfer/
+
+echonet segmentation --data_dir data/pediatric/A4C --num_epochs 50 --output output/pediatric/segmentation/a4c_scratch/
+echonet segmentation --data_dir data/pediatric/A4C --weights deeplabv3_resnet50_random.pt --num_epochs 0 --output output/pediatric/segmentation/a4c_blind/
+echonet segmentation --data_dir data/pediatric/A4C --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-5 --output output/pediatric/segmentation/a4c_lr_1e-5/
+echonet segmentation --data_dir data/pediatric/A4C --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --output output/pediatric/segmentation/a4c_lr_1e-6/
+echonet segmentation --data_dir data/pediatric/A4C --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --last --output output/pediatric/segmentation/a4c_transfer/
+
+echonet segmentation --data_dir data/pediatric/PSAX --num_epochs 50 --output output/pediatric/segmentation/psax_scratch/
+echonet segmentation --data_dir data/pediatric/PSAX --weights deeplabv3_resnet50_random.pt --num_epochs 0 --output output/pediatric/segmentation/psax_blind/
+echonet segmentation --data_dir data/pediatric/PSAX --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-5 --output output/pediatric/segmentation/psax_lr_1e-5/
+echonet segmentation --data_dir data/pediatric/PSAX --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --output output/pediatric/segmentation/psax_lr_1e-6/
+echonet segmentation --data_dir data/pediatric/PSAX --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --last --output output/pediatric/segmentation/psax_transfer/

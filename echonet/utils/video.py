@@ -13,10 +13,21 @@ import torchvision
 import tqdm
 
 import echonet
+import click
 
 
+@click.command("video")
+@click.option("--data_dir", type=click.Path(), default=None)
+@click.option("--num_epochs", type=int, default=45)
+@click.option("--weights", type=click.Path(), default=None)
+@click.option("--lr", type=float, default=1e-4)
+@click.option("--lr_step_period", type=int, default=15)
+@click.option("--output", type=click.Path(), default=None)
+@click.option("--full/--last", default=True)
 def run(num_epochs=45,
+        data_dir=None,
         modelname="r2plus1d_18",
+        weights=None,
         tasks="EF",
         frames=32,
         period=2,
@@ -25,12 +36,14 @@ def run(num_epochs=45,
         output=None,
         device=None,
         n_train_patients=None,
+        lr=1e-4,
         weight_decay=1e-4,
         num_workers=5,
         batch_size=20,
         seed=0,
         lr_step_period=15,
-        run_test=False):
+        run_test=True,
+        full=True):
     """Trains/tests EF prediction model.
 
     Args:
@@ -40,7 +53,7 @@ def run(num_epochs=45,
             ``r2plus1d_18'', or ``r3d_18''
             (options are torchvision.models.video.<modelname>)
             Defaults to ``r2plus1d_18''.
-        tasks (str, optional): Name of task to predict. Options are the headers
+        tasks (str, optional): Name of task to predict. Options are the headers  TODO or list?
             of FileList.csv.
             Defaults to ``EF''.
         pretrained (bool, optional): Whether to use pretrained weights for model
@@ -91,14 +104,21 @@ def run(num_epochs=45,
         model = torch.nn.DataParallel(model)
     model.to(device)
 
+    if weights is not None:
+        checkpoint = torch.load(weights)
+        model.load_state_dict(checkpoint['state_dict'])
+
     # Set up optimizer
-    optim = torch.optim.SGD(model.parameters(), lr=1e-4, momentum=0.9, weight_decay=weight_decay)
+    if full:
+        optim = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
+    else:
+        optim = torch.optim.SGD(model.module.fc.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
     if lr_step_period is None:
         lr_step_period = math.inf
     scheduler = torch.optim.lr_scheduler.StepLR(optim, lr_step_period)
 
     # Compute mean and std
-    mean, std = echonet.utils.get_mean_and_std(echonet.datasets.Echo(split="train"))
+    mean, std = echonet.utils.get_mean_and_std(echonet.datasets.Echo(root=data_dir, split="train"))
     kwargs = {"target_type": tasks,
               "mean": mean,
               "std": std,
@@ -109,12 +129,12 @@ def run(num_epochs=45,
 
     # Set up datasets and dataloaders
     dataset = {}
-    dataset["train"] = echonet.datasets.Echo(split="train", **kwargs, pad=12, rotate=rotate)
+    dataset["train"] = echonet.datasets.Echo(root=data_dir, split="train", **kwargs, pad=12, rotate=rotate)
     if n_train_patients is not None and len(dataset["train"]) > n_train_patients:
         # Subsample patients (used for ablation experiment)
         indices = np.random.choice(len(dataset["train"]), n_train_patients, replace=False)
         dataset["train"] = torch.utils.data.Subset(dataset["train"], indices)
-    dataset["val"] = echonet.datasets.Echo(split="val", **kwargs)
+    dataset["val"] = echonet.datasets.Echo(root=data_dir, split="val", **kwargs)
     print("D", flush=True)
 
     index_buffer = []
@@ -141,17 +161,16 @@ def run(num_epochs=45,
                 for i in range(torch.cuda.device_count()):
                     torch.cuda.reset_peak_memory_stats(i)
 
-                loss, yhat, y = echonet.utils.video.run_epoch(model, dataloaders[phase], phase == "train", optim, device)
                 ds = dataset[phase]
-                if phase == "train":
-                    while len(index_buffer) < 10000:
-                        x = list(range(len(ds)))
-                        random.shuffle(x)
-                        index_buffer.extend(x)
+                # if phase == "train":
+                #     while len(index_buffer) < 10000:
+                #         x = list(range(len(ds)))
+                #         random.shuffle(x)
+                #         index_buffer.extend(x)
 
-                    indices = index_buffer[:10000]
-                    index_buffer = index_buffer[10000:]
-                    ds = torch.utils.data.Subset(ds, indices)
+                #     indices = index_buffer[:10000]
+                #     index_buffer = index_buffer[10000:]
+                #     ds = torch.utils.data.Subset(ds, indices)
 
                 dataloader = torch.utils.data.DataLoader(
                     ds, batch_size=batch_size, num_workers=num_workers, shuffle=True, pin_memory=(device.type == "cuda"), drop_last=(phase == "train"))
@@ -163,7 +182,7 @@ def run(num_epochs=45,
                                                               time.time() - start_time,
                                                               y.size,
                                                               sum(torch.cuda.max_memory_allocated() for i in range(torch.cuda.device_count())),
-                                                              sum(torch.cuda.max_memory_cached() for i in range(torch.cuda.device_count())),
+                                                              sum(torch.cuda.max_memory_reserved() for i in range(torch.cuda.device_count())),
                                                               batch_size))
                 f.flush()
             scheduler.step()
@@ -186,16 +205,17 @@ def run(num_epochs=45,
                 bestLoss = loss
 
         # Load best weights
-        checkpoint = torch.load(os.path.join(output, "best.pt"))
-        model.load_state_dict(checkpoint['state_dict'])
-        f.write("Best validation loss {} from epoch {}\n".format(checkpoint["loss"], checkpoint["epoch"]))
-        f.flush()
+        if num_epochs != 0:
+            checkpoint = torch.load(os.path.join(output, "best.pt"))
+            model.load_state_dict(checkpoint['state_dict'])
+            f.write("Best validation loss {} from epoch {}\n".format(checkpoint["loss"], checkpoint["epoch"]))
+            f.flush()
 
         if run_test:
-            for split in ["val", "test"]:
+            for split in ["test"]:
                 # Performance without test-time augmentation
                 dataloader = torch.utils.data.DataLoader(
-                    echonet.datasets.Echo(split=split, **kwargs),
+                    echonet.datasets.Echo(root=data_dir, split=split, **kwargs),
                     batch_size=batch_size, num_workers=num_workers, shuffle=True, pin_memory=(device.type == "cuda"))
                 loss, yhat, y = echonet.utils.video.run_epoch(model, dataloader, False, None, device)
                 f.write("{} (one clip) R2:   {:.3f} ({:.3f} - {:.3f})\n".format(split, *echonet.utils.bootstrap(y, yhat, sklearn.metrics.r2_score)))
@@ -204,7 +224,7 @@ def run(num_epochs=45,
                 f.flush()
 
                 # Performance with test-time augmentation
-                ds = echonet.datasets.Echo(split=split, **kwargs, clips="all")
+                ds = echonet.datasets.Echo(root=data_dir, split=split, **kwargs, clips="all")
                 dataloader = torch.utils.data.DataLoader(
                     ds, batch_size=1, num_workers=num_workers, shuffle=False, pin_memory=(device.type == "cuda"))
                 loss, yhat, y = echonet.utils.video.run_epoch(model, dataloader, False, None, device, save_all=True, block_size=batch_size)

@@ -3,6 +3,7 @@
 import math
 import os
 import time
+import click
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,8 +16,18 @@ import tqdm
 import echonet
 
 
+@click.command("segmentation")
+@click.option("--data_dir", type=click.Path(), default=None)
+@click.option("--num_epochs", type=int, default=50)
+@click.option("--weights", type=click.Path(), default=None)
+@click.option("--lr", type=float, default=1e-5)
+@click.option("--lr_step_period", type=int, default=None)
+@click.option("--output", type=click.Path(), default=None)
+@click.option("--full/--last", default=True)
 def run(num_epochs=50,
+        data_dir=None,
         modelname="deeplabv3_resnet50",
+        weights=None,
         pretrained=False,
         output=None,
         device=None,
@@ -24,10 +35,12 @@ def run(num_epochs=50,
         num_workers=4,
         batch_size=20,
         seed=0,
+        lr=1e-5,
         lr_step_period=None,
-        save_segmentation=False,
+        save_segmentation=True,
         block_size=1024,
-        run_test=False):
+        run_test=True,
+        full=True):
     """Trains/tests segmentation model.
 
     Args:
@@ -91,14 +104,21 @@ def run(num_epochs=50,
         model = torch.nn.DataParallel(model)
     model.to(device)
 
+    if weights is not None:
+        checkpoint = torch.load(weights)
+        model.load_state_dict(checkpoint['state_dict'])
+
     # Set up optimizer
-    optim = torch.optim.SGD(model.parameters(), lr=1e-5, momentum=0.9)
+    if full:
+        optim = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+    else:
+        optim = torch.optim.SGD(model.module.classifier[-1].parameters(), lr=lr, momentum=0.9)
     if lr_step_period is None:
         lr_step_period = math.inf
     scheduler = torch.optim.lr_scheduler.StepLR(optim, lr_step_period)
 
     # Compute mean and std
-    mean, std = echonet.utils.get_mean_and_std(echonet.datasets.Echo(split="train"))
+    mean, std = echonet.utils.get_mean_and_std(echonet.datasets.Echo(root=data_dir, split="train"))
     tasks = ["LargeFrame", "SmallFrame", "LargeTrace", "SmallTrace"]
     kwargs = {"target_type": tasks,
               "mean": mean,
@@ -106,7 +126,7 @@ def run(num_epochs=50,
               }
 
     # Set up datasets and dataloaders
-    train_dataset = echonet.datasets.Echo(split="train", **kwargs)
+    train_dataset = echonet.datasets.Echo(root=data_dir, split="train", **kwargs)
 
     if n_train_patients is not None and len(train_dataset) > n_train_patients:
         # Subsample patients (used for ablation experiment)
@@ -116,7 +136,7 @@ def run(num_epochs=50,
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset, batch_size=batch_size, num_workers=num_workers, shuffle=True, pin_memory=(device.type == "cuda"), drop_last=True)
     val_dataloader = torch.utils.data.DataLoader(
-        echonet.datasets.Echo(split="val", **kwargs), batch_size=batch_size, num_workers=num_workers, shuffle=True, pin_memory=(device.type == "cuda"))
+        echonet.datasets.Echo(root=data_dir, split="val", **kwargs), batch_size=batch_size, num_workers=num_workers, shuffle=True, pin_memory=(device.type == "cuda"))
     dataloaders = {'train': train_dataloader, 'val': val_dataloader}
 
     # Run training and testing loops
@@ -155,7 +175,7 @@ def run(num_epochs=50,
                                                                     time.time() - start_time,
                                                                     large_inter.size,
                                                                     sum(torch.cuda.max_memory_allocated() for i in range(torch.cuda.device_count())),
-                                                                    sum(torch.cuda.max_memory_cached() for i in range(torch.cuda.device_count())),
+                                                                    sum(torch.cuda.max_memory_reserved() for i in range(torch.cuda.device_count())),
                                                                     batch_size))
                 f.flush()
             scheduler.step()
@@ -175,14 +195,15 @@ def run(num_epochs=50,
                 bestLoss = loss
 
         # Load best weights
-        checkpoint = torch.load(os.path.join(output, "best.pt"))
-        model.load_state_dict(checkpoint['state_dict'])
-        f.write("Best validation loss {} from epoch {}\n".format(checkpoint["loss"], checkpoint["epoch"]))
+        if num_epochs != 0:
+            checkpoint = torch.load(os.path.join(output, "best.pt"))
+            model.load_state_dict(checkpoint['state_dict'])
+            f.write("Best validation loss {} from epoch {}\n".format(checkpoint["loss"], checkpoint["epoch"]))
 
         if run_test:
             # Run on validation and test
             for split in ["val", "test"]:
-                dataset = echonet.datasets.Echo(split=split, **kwargs)
+                dataset = echonet.datasets.Echo(root=data_dir, split=split, **kwargs)
                 dataloader = torch.utils.data.DataLoader(dataset,
                                                          batch_size=batch_size, num_workers=num_workers, shuffle=False, pin_memory=(device.type == "cuda"))
                 loss, large_inter, large_union, small_inter, small_union = echonet.utils.segmentation.run_epoch(model, dataloader, False, None, device)
@@ -201,12 +222,12 @@ def run(num_epochs=50,
                 f.flush()
 
     # Saving videos with segmentations
-    dataset = echonet.datasets.Echo(split="test",
+    dataset = echonet.datasets.Echo(root=data_dir, split="test",
                                     target_type=["Filename", "LargeIndex", "SmallIndex"],  # Need filename for saving, and human-selected frames to annotate
                                     mean=mean, std=std,  # Normalization
                                     length=None, max_length=None, period=1  # Take all frames
                                     )
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=10, num_workers=num_workers, shuffle=False, pin_memory=False, collate_fn=_video_collate_fn)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, num_workers=num_workers, shuffle=False, pin_memory=False, collate_fn=_video_collate_fn)
 
     # Save videos with segmentation
     if save_segmentation and not all(os.path.isfile(os.path.join(output, "videos", f)) for f in dataloader.dataset.fnames):
@@ -313,7 +334,7 @@ def run(num_epochs=50,
                                 video[:, :, d, int(round(f / len(size) * 200 + 10))] = np.array([0, 0, 225]).reshape((1, 3, 1))
 
                             # Get pixels for a circle centered on the pixel
-                            r, c = skimage.draw.circle(int(round(115 + 100 * s)), int(round(f / len(size) * 200 + 10)), 4.1)
+                            r, c = skimage.draw.disk((int(round(115 + 100 * s)), int(round(f / len(size) * 200 + 10))), 4.1)
 
                             # On the frame that's being shown, put a circle over the pixel
                             video[f, :, r, c] = 255.
