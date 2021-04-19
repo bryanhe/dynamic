@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>EF Labeling</title>
+
+  <script>
+    function send() {
+      message = "";
+      for (x of ["EF", "Interpretable"]) {
+        var radios = document.getElementsByName(x);
+        for (var i = 0, length = radios.length; i < length; i++) {
+          if (radios[i].checked) {
+            message += x + ":" + radios[i].value + "\n";
+
+            // only one radio can be logically checked, don't check the rest
+            break;
+          }
+        }
+      }
+      console.log(message)
+      if (message != "") {
+        const http = new XMLHttpRequest();
+        http.open("POST", "");
+        http.send(message);
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <center>
+    Patient #{{ index }} / {{ total }}
+    <br />
+    {% if prev != None %}
+    &lt; <a href="/{{ user }}/{{ prev }}">Prev</a>
+    {% endif %}
+    | <a href="/{{ user }}">Home</a> |
+    {% if next != None %}
+    <a href="/{{ user }}/{{ next }}">Next</a> &gt;
+    {% endif %}
+
+    <br />
+    <br />
+
+    <video width="{{ width }}" height="{{ height }}" controls loop autoplay>
+      <source src="/video/{{ video }}.webm" type="video/webm">
+      Your browser does not support the video tag.
+    </video>
+
+    <br />
+    <br />
+
+    <table onclick="send()">
+      {% for (class, value) in labels %}
+      <tr>
+        <th>{{ class }}</th>
+        <td>
+        </td>
+        <td>
+          <table>
+            {% for v in value %}
+            <tr>
+              <td>
+                <input type="radio" id="{{ class }}_{{ v }}" name="{{ class }}" value="{{ v }}" {% if class in data and data[class] == v %} checked {% endif %}>
+                <label for="{{ class }}_{{ v }}">{{ v }}</label>
+              </td>
+            </tr>
+            {% endfor %}
+          </table>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </center>
+</body>
+</html>
