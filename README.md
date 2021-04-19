@@ -95,3 +95,36 @@ This script combines the results from segmentation output in `size.csv` and the 
 
 The full set of hyperparameter sweeps from the paper can be run via `run_experiments.sh`.
 In particular, we choose between pretrained and random initialization for the weights, the model (selected from `r2plus1d_18`, `r3d_18`, and `mc3_18`), the length of the video (1, 4, 8, 16, 32, 64, and 96 frames), and the sampling period (1, 2, 4, 6, and 8 frames).
+
+
+
+for rotate in 0 10 20 30 40 50
+do
+    cmd="import echonet; echonet.utils.video.run(modelname=\"r2plus1d_18\",
+                                                 frames=32,
+                                                 period=2,
+                                                 rotate=${rotate},
+                                                 pretrained=True,
+                                                 batch_size=8,
+                                                 run_test=True,
+                                                 output=\"output/rotate_${rotate}\")"
+    shbatch --partition=jamesz,owners,normal --time=24:00:00 --gpus=2 --cpus-per-task=10 -- python3 -c \'${cmd}\'
+done
+
+for rotate in 0 10 20 30 40 50
+do
+    cmd="import echonet; echonet.utils.video.run(modelname=\"r2plus1d_18\",
+                                                 frames=32,
+                                                 period=2,
+                                                 rotate=${rotate},
+                                                 pretrained=True,
+                                                 batch_size=8,
+                                                 run_test=True,
+                                                 output=\"output/rotate_${rotate}\")"
+    python3 -c "${cmd}"
+done
+
+
+  for i in `ls er_videos_2`; do ffmpeg -i er_videos_2/${i} er_videos_2_mp4/${i%.avi}.mp4; done
+
+  scripts/server/server.py er_videos_2_mp4/ labels

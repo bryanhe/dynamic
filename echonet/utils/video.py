@@ -59,6 +59,7 @@ def run(
     batch_size=20,
     device=None,
     seed=0,
+    rotate=None,  # TODO skip
 ):
     """Trains/tests EF prediction model.
 
@@ -149,7 +150,7 @@ def run(
 
     # Set up datasets and dataloaders
     dataset = {}
-    dataset["train"] = echonet.datasets.Echo(root=data_dir, split="train", **kwargs, pad=12)
+    dataset["train"] = echonet.datasets.Echo(root=data_dir, split="train", **kwargs, pad=12, rotate=rotate)
     if num_train_patients is not None and len(dataset["train"]) > num_train_patients:
         # Subsample patients (used for ablation experiment)
         indices = np.random.choice(len(dataset["train"]), num_train_patients, replace=False)
