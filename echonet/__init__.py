@@ -7,6 +7,7 @@ prediction models.
 from echonet.__version__ import __version__
 from echonet.config import CONFIG as config
 import echonet.datasets as datasets
+import echonet.models as models
 import echonet.utils as utils
 
 import click
@@ -23,4 +24,4 @@ del click
 main.add_command(utils.segmentation.run)
 main.add_command(utils.video.run)
 
-__all__ = ["__version__", "config", "datasets", "main", "utils"]
+__all__ = ["__version__", "config", "datasets", "models", "utils"]
