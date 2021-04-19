@@ -95,3 +95,45 @@ This script combines the results from segmentation output in `size.csv` and the 
 
 The full set of hyperparameter sweeps from the paper can be run via `run_experiments.sh`.
 In particular, we choose between pretrained and random initialization for the weights, the model (selected from `r2plus1d_18`, `r3d_18`, and `mc3_18`), the length of the video (1, 4, 8, 16, 32, 64, and 96 frames), and the sampling period (1, 2, 4, 6, and 8 frames).
+
+# for n_train_patients in None 1000 10000
+# for n_train_patients in 5000 50000
+# for n_train_patients in 2500 7500 25000 75000
+# for n_train_patients in 100 250 500
+for n_train_patients in 250 500 2500 25000 50000 75000
+do
+    cmd="import echonet; echonet.utils.video.run(modelname=\"r2plus1d_18\",
+                                                 frames=32,
+                                                 period=2,
+                                                 pretrained=True,
+                                                 batch_size=8,
+                                                 n_train_patients=${n_train_patients},
+                                                 run_test=True,
+                                                 num_workers=20,
+                                                 output=\"output/train_${n_train_patients}\")"
+# python3 -c "${cmd}"
+    shbatch --partition=jamesz,owners,normal --job-name="t${n_train_patients}" --time=30:00:00 --gpus=4 --cpus-per-task=20 -- python3 -c \'${cmd}\'
+done
+
+    cmd="import echonet; echonet.utils.video.run(modelname=\"r2plus1d_18\",
+                                                 frames=32,
+                                                 period=2,
+                                                 pretrained=True,
+                                                 batch_size=8,
+                                                 weight_decay=1e-5,
+                                                 run_test=True,
+                                                 num_workers=20,
+                                                 output=\"output/train_None_wd_1e-5\")"
+# python3 -c "${cmd}"
+    shbatch --partition=jamesz,owners,normal --job-name="wd1e-5" --time=30:00:00 --gpus=4 --cpus-per-task=20 -- python3 -c \'${cmd}\'
+
+    cmd="import echonet; echonet.utils.video.run(modelname=\"r2plus1d_18\",
+                                                 frames=32,
+                                                 period=2,
+                                                 pretrained=False,
+                                                 batch_size=8,
+                                                 run_test=True,
+                                                 num_workers=20,
+                                                 output=\"output/train_None_random\")"
+# python3 -c "${cmd}"
+    shbatch --partition=jamesz,owners,normal --job-name="random" --time=30:00:00 --gpus=4 --cpus-per-task=20 -- python3 -c \'${cmd}\'
