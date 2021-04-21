@@ -79,7 +79,7 @@ def savevideo(filename: str, array: np.ndarray, fps: typing.Union[float, int] = 
     elif os.path.splitext(filename)[-1] == ".webm":
         fourcc = cv2.VideoWriter_fourcc(*"vp80")
     else:
-        raise NotImplementedError("Saving videos to "{}" not supported.".format(os.path.splitext(filename))[-1])
+        raise NotImplementedError("Saving videos to \"{}\" not supported.".format(os.path.splitext(filename))[-1])
     out = cv2.VideoWriter(filename, fourcc, fps, (width, height))
 
     for frame in array.transpose((1, 2, 3, 0)):
