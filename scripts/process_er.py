@@ -15,13 +15,19 @@ import echonet
 @click.argument("src", type=click.Path(exists=True, file_okay=False))
 @click.argument("dest", type=click.Path(file_okay=False))
 def main(src, dest):
+
+    files = sorted((dirpath, filename) for (dirpath, dirnames, filenames) in os.walk(src) for filename in filenames if filename != "Attributes Second 133.xlsx")
+    basenames = [os.path.splitext(filename)[0] for (_, filename) in files]
+    assert len(basenames) == len(set(basenames))
+
     os.makedirs(dest, exist_ok=True)
-    for filename in tqdm.tqdm(sorted(os.listdir(src))):
+    for (dirpath, filename) in tqdm.tqdm(files):
+        print(dirpath, filename)
         output = os.path.join(dest, os.path.splitext(filename)[0] + ".webm")
         if not os.path.isfile(output):
-            capture = cv2.VideoCapture(os.path.join(src, filename))
+            capture = cv2.VideoCapture(os.path.join(dirpath, filename))
             fps = capture.get(cv2.CAP_PROP_FPS)
-            video = echonet.utils.loadvideo(os.path.join(src, filename))
+            video = echonet.utils.loadvideo(os.path.join(dirpath, filename))
             video = test(video)
             # video.save(os.path.join(dest, os.path.splitext(filename)[0] + ".png"))
             # continue
