@@ -127,7 +127,6 @@ done
 
   for i in `ls er_videos_2`; do ffmpeg -i er_videos_2/${i} er_videos_2_mp4/${i%.avi}.mp4; done
 
-  scripts/server/server.py er_videos_2_mp4/ labels
 
 
 
@@ -136,3 +135,5 @@ done
   rclone copy -P box:"Apical 4 Chamber Views - Third" "Apical 4 Chamber Views - Third"
 
   scripts/process_er.py data/er_raw_data/ data/er_processed/
+
+  scripts/server/server.py data/er_processed/ data/labels
