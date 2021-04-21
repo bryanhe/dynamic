@@ -8,8 +8,9 @@
 <body>
   <select name="users" onchange="location=this.options[this.selectedIndex].value;">
     <option value="/">--Select User--</option>
-    <option value="/BH" {% if user == "BH"%} selected {% endif %}>BH</option>
-    <option value="/DD" {% if user == "DD"%} selected {% endif %}>DD</option>
+    {% for user in users %}
+    <option value="/{{ user }}" {% if user == "{{ user }}"%} selected {% endif %}>{{ user }}</option>
+    {% endfor %}
   </select>
   {% if user != "" %}
   <h1> Unlabeled Videos ({{ todo|length }} / {{ todo|length + done|length }})</h1>

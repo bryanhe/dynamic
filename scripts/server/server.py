@@ -10,6 +10,7 @@ import cv2
 app = flask.Flask(__name__)
 DATA_DIR = None
 SAVE_DIR = None
+USERS = None
 
 @click.command()
 @click.argument("data_dir",
@@ -18,11 +19,13 @@ SAVE_DIR = None
                 type=click.Path(file_okay=False))
 @click.option('--host', default='0.0.0.0')
 @click.option('-p', '--port', type=int, default=8000)
-def main(data_dir, save_dir, host, port, users=["BH", "DD"]):
+def main(data_dir, save_dir, host, port, users=["BH", "DD", "TT", "YD"]):
     global DATA_DIR
     global SAVE_DIR
+    global USERS
     DATA_DIR = data_dir
     SAVE_DIR = save_dir
+    USERS = users
     app.run(host=host, port=port, threaded=True, debug=True)
 
 @app.route("/")
@@ -47,7 +50,7 @@ def index(user):
         else:
             todo.append(v)
     
-    return flask.render_template("index.html", user=user, todo=todo, done=done)
+    return flask.render_template("index.html", users=USERS, user=user, todo=todo, done=done)
 
 @app.route("/<string:user>/<string:video>", methods=["GET", "POST"])
 def label(user, video):
