@@ -131,6 +131,7 @@ done
 
 
 
+  cd data/er_raw_data/
   rclone copy -P box:"First Batch Apical 4 Chamber" "First Batch Apical 4 Chamber"
   rclone copy -P box:"Apical 4 Chamber Views - Second" "Apical 4 Chamber Views - Second"
   rclone copy -P box:"Apical 4 Chamber Views - Third" "Apical 4 Chamber Views - Third"
