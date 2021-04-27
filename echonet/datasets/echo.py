@@ -121,18 +121,27 @@ class Echo(torchvision.datasets.VisionDataset):
 
             with open(os.path.join(self.root, "VolumeTracings.csv")) as f:
                 header = f.readline().strip().split(",")
-                assert header == ["FileName", "X1", "Y1", "X2", "Y2", "Frame"]
-
-                for line in f:
-                    filename, x1, y1, x2, y2, frame = line.strip().split(',')
-                    x1 = float(x1)
-                    y1 = float(y1)
-                    x2 = float(x2)
-                    y2 = float(y2)
-                    frame = int(frame)
-                    if frame not in self.trace[filename]:
-                        self.frames[filename].append(frame)
-                    self.trace[filename][frame].append((x1, y1, x2, y2))
+                if header == ["FileName", "X1", "Y1", "X2", "Y2", "Frame"]:
+                    for line in f:
+                        filename, x1, y1, x2, y2, frame = line.strip().split(',')
+                        x1 = float(x1)
+                        y1 = float(y1)
+                        x2 = float(x2)
+                        y2 = float(y2)
+                        frame = int(frame)
+                        if frame not in self.trace[filename]:
+                            self.frames[filename].append(frame)
+                        self.trace[filename][frame].append((x1, y1, x2, y2))
+                if header == ["FileName", "X", "Y", "Frame"]:
+                    # TODO: probably could merge
+                    for line in f:
+                        filename, x, y, frame = line.strip().split(',')
+                        x = float(x)
+                        y = float(y)
+                        frame = int(frame)
+                        if frame not in self.trace[filename]:
+                            self.frames[filename].append(frame)
+                        self.trace[filename][frame].append((x, y))
             for filename in self.frames:
                 for frame in self.frames[filename]:
                     self.trace[filename][frame] = np.array(self.trace[filename][frame])
@@ -225,9 +234,13 @@ class Echo(torchvision.datasets.VisionDataset):
                     t = self.trace[key][self.frames[key][-1]]
                 else:
                     t = self.trace[key][self.frames[key][0]]
-                x1, y1, x2, y2 = t[:, 0], t[:, 1], t[:, 2], t[:, 3]
-                x = np.concatenate((x1[1:], np.flip(x2[1:])))
-                y = np.concatenate((y1[1:], np.flip(y2[1:])))
+                if t.shape[1] == 4:
+                    x1, y1, x2, y2 = t[:, 0], t[:, 1], t[:, 2], t[:, 3]
+                    x = np.concatenate((x1[1:], np.flip(x2[1:])))
+                    y = np.concatenate((y1[1:], np.flip(y2[1:])))
+                else:
+                    assert t.shape[1] == 2
+                    x, y = t[:, 0], t[:, 1]
 
                 r, c = skimage.draw.polygon(np.rint(y).astype(np.int), np.rint(x).astype(np.int), (video.shape[2], video.shape[3]))
                 mask = np.zeros((video.shape[2], video.shape[3]), np.float32)
