@@ -96,28 +96,37 @@ This script combines the results from segmentation output in `size.csv` and the 
 The full set of hyperparameter sweeps from the paper can be run via `run_experiments.sh`.
 In particular, we choose between pretrained and random initialization for the weights, the model (selected from `r2plus1d_18`, `r3d_18`, and `mc3_18`), the length of the video (1, 4, 8, 16, 32, 64, and 96 frames), and the sampling period (1, 2, 4, 6, and 8 frames).
 
-echonet video --data_dir data/pediatric/A4C --num_epochs 45 --output output/ef/a4c_scratch/
-echonet video --data_dir data/pediatric/A4C --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 0 --output output/ef/a4c_blind/
-echonet video --data_dir data/pediatric/A4C --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-4 --output output/ef/a4c_lr_1e-4/
-echonet video --data_dir data/pediatric/A4C --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-5 --output output/ef/a4c_lr_1e-5/
-echonet video --data_dir data/pediatric/A4C --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 1000 --lr 1e-6 --output output/ef/a4c_lr_1e-6/
-echonet video --data_dir data/pediatric/A4C --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 10 --lr 1e-5 --last --output output/ef/a4c_transfer/
+scripts/process_pediatric.py ~/Pediatric\ Echos.zip data/pediatric/
+scripts/cross_validate_pediatric.py data/pediatric/
 
-echonet video --data_dir data/pediatric/PSAX --num_epochs 45 --output output/ef/psax_scratch/
-echonet video --data_dir data/pediatric/PSAX --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 0 --output output/ef/psax_blind/
-echonet video --data_dir data/pediatric/PSAX --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-4 --output output/ef/psax_lr_1e-4/
-echonet video --data_dir data/pediatric/PSAX --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-5 --output output/ef/psax_lr_1e-5/
-echonet video --data_dir data/pediatric/PSAX --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 1000 --lr 1e-6 --output output/ef/psax_lr_1e-6/
-echonet video --data_dir data/pediatric/PSAX --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 10 --lr 1e-5 --last --output output/ef/psax_transfer/
+for view in A4C PSAX
+do
+    for seed in `seq 0 9`
+    do
+        echo ${view} ${seed}
+        for split in TRAIN VAL TEST
+        do
+            echo ${split} `grep ${split} data/pediatric/${view}_${seed}/FileList.csv | wc -l`
+        done
+        echo
+    done
+done
 
-echonet segmentation --data_dir data/pediatric/A4C --num_epochs 50 --output output/pediatric/segmentation/a4c_scratch/
-echonet segmentation --data_dir data/pediatric/A4C --weights deeplabv3_resnet50_random.pt --num_epochs 0 --output output/pediatric/segmentation/a4c_blind/
-echonet segmentation --data_dir data/pediatric/A4C --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-5 --output output/pediatric/segmentation/a4c_lr_1e-5/
-echonet segmentation --data_dir data/pediatric/A4C --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --output output/pediatric/segmentation/a4c_lr_1e-6/
-echonet segmentation --data_dir data/pediatric/A4C --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --last --output output/pediatric/segmentation/a4c_transfer/
-
-echonet segmentation --data_dir data/pediatric/PSAX --num_epochs 50 --output output/pediatric/segmentation/psax_scratch/
-echonet segmentation --data_dir data/pediatric/PSAX --weights deeplabv3_resnet50_random.pt --num_epochs 0 --output output/pediatric/segmentation/psax_blind/
-echonet segmentation --data_dir data/pediatric/PSAX --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-5 --output output/pediatric/segmentation/psax_lr_1e-5/
-echonet segmentation --data_dir data/pediatric/PSAX --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --output output/pediatric/segmentation/psax_lr_1e-6/
-echonet segmentation --data_dir data/pediatric/PSAX --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --last --output output/pediatric/segmentation/psax_transfer/
+for seed in `seq 0 9`
+do
+    for view in A4C PSAX
+    do
+        echonet video --data_dir data/pediatric/${view}_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 0 --output output/ef/${view}_${seed}_blind/ --run_test
+        echonet video --data_dir data/pediatric/${view}_${seed}/ --num_epochs 45 --output output/ef/${view}_${seed}_scratch/ --run_test
+        echonet video --data_dir data/pediatric/${view}_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-4 --output output/ef/${view}_${seed}_lr_1e-4/ --run_test
+        # echonet video --data_dir data/pediatric/${view}_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-5 --output output/ef/${view}_${seed}_lr_1e-5/ --run_test
+        # echonet video --data_dir data/pediatric/${view}_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 1000 --lr 1e-6 --output output/ef/${view}_${seed}_lr_1e-6/ --run_test
+        echonet video --data_dir data/pediatric/${view}_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 10 --lr 1e-5 --last --output output/ef/${view}_${seed}_transfer/ --run_test
+    
+        # echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --weights deeplabv3_resnet50_random.pt --num_epochs 0 --output output/pediatric/segmentation/${view}_${seed}_blind/
+        # echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --num_epochs 50 --output output/pediatric/segmentation/${view}_${seed}_scratch/
+        # echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-5 --output output/pediatric/segmentation/${view}_${seed}_lr_1e-5/
+        # echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --output output/pediatric/segmentation/${view}_${seed}_lr_1e-6/
+        # echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --last --output output/pediatric/segmentation/${view}_${seed}_transfer/
+    done
+done

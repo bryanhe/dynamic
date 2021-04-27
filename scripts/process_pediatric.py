@@ -109,13 +109,14 @@ def main(src, dest):
         index = {p: i for (i, p) in enumerate(patients)}
         split = {}
         for p in index:
-            i = index[p] % 20
-            if i < 14:
-                split[p] = "TRAIN"
-            elif i < 17:
-                split[p] = "VAL"
-            else:
-                split[p] = "TEST"
+            split[p] = (index[p] % 10)
+            # i = index[p] % 20
+            # if i < 14:
+            #     split[p] = "TRAIN"
+            # elif i < 17:
+            #     split[p] = "VAL"
+            # else:
+            #     split[p] = "TEST"
         with open(os.path.join(dest, "FileList.csv"), "w") as f:
             f.write("FileName,EF,Split\n")
             for (p, a) in ef:
@@ -151,7 +152,7 @@ def main(src, dest):
                         if (p, a, "{:06d}".format(i)) in coord:
                             for (frame, c) in coord[p, a, "{:06d}".format(i)]:
                                 for (x, y) in c:
-                                    f.write("{}-{}-{:06d},{},{},{}\n".format(p, a, i, x, y, frame))
+                                    f.write("{}-{}-{:06d}.avi,{},{},{}\n".format(p, a, i, x, y, frame))
 
 
 def save_tgz(x):
