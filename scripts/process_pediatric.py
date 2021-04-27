@@ -152,7 +152,11 @@ def main(src, dest):
                         if (p, a, "{:06d}".format(i)) in coord:
                             for (frame, c) in coord[p, a, "{:06d}".format(i)]:
                                 for (x, y) in c:
+<<<<<<< HEAD
                                     f.write("{}-{}-{:06d}.avi,{},{},{}\n".format(p, a, i, x, y, frame))
+=======
+                                    f.write("{}-{}-{:06d},{},{},{}\n".format(p, a, i, x, y, frame))
+>>>>>>> cf3a79bbc5f2354fc2c2307b4c256267bfbf1878
 
 
 def save_tgz(x):
