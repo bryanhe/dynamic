@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import concurrent.futures
 import PIL
 import click
 import cv2
@@ -21,18 +22,20 @@ def main(src, dest):
     assert len(basenames) == len(set(basenames))
 
     os.makedirs(dest, exist_ok=True)
-    for (dirpath, filename) in tqdm.tqdm(files):
+
+    def process(x):
+        (dirpath, filename) = x
         print(dirpath, filename)
         output = os.path.join(dest, os.path.splitext(filename)[0] + ".webm")
         if not os.path.isfile(output):
             capture = cv2.VideoCapture(os.path.join(dirpath, filename))
             fps = capture.get(cv2.CAP_PROP_FPS)
             video = echonet.utils.loadvideo(os.path.join(dirpath, filename))
-            video = test(video)
+            video = mask_full(video)
             # video.save(os.path.join(dest, os.path.splitext(filename)[0] + ".png"))
             # continue
             echonet.utils.savevideo(output, video, fps)
-        continue
+        return dirpath, filename
         # if filename in ["VID11216.mp4", "VID11713.mp4", "VID14180.mp4", "VID14278.mp4", "VID14441.mp4", "VID1480.mp4", "VID1481.mp4", "VID16642.mp4", "VID16885.mp4"]:
         #     continue
         # output = os.path.join(dest, os.path.splitext(filename)[0] + ".avi")
@@ -49,6 +52,14 @@ def main(src, dest):
             video = mask(video)
             echonet.utils.savevideo(output, video, fps)
 
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        with tqdm.tqdm(total=len(files)) as pbar:
+            for (dirpath, filename) in executor.map(process, files):
+                pbar.set_postfix_str(os.path.join(dirpath, filename))
+                pbar.update()
+
+
+
 def crop(video):
     h = video.shape[2]
     w = video.shape[3]
@@ -58,7 +69,7 @@ def crop(video):
 def resize(video, size=(112, 112)):
     return np.array(list(map(lambda x: cv2.resize(x, size, interpolation=cv2.INTER_AREA), video.transpose((1, 2, 3, 0))))).transpose((3, 0, 1, 2))
 
-def test(video):
+def mask_full(video):
     (c, f, h, w) = video.shape
     assert c == 3
     std = video.std(1)
