@@ -104,7 +104,7 @@ class Echo(torchvision.datasets.VisionDataset):
 
             self.header = data.columns.tolist()
             self.fnames = data["FileName"].tolist()
-            self.fnames = [fn + ".avi" for fn in self.fnames if os.path.splitext(fn)[1] == ""]  # Assume avi if no suffix
+            self.fnames = [fn if os.path.splitext(fn)[1] != "" else fn + ".avi" for fn in self.fnames]  # Assume avi if no suffix
             self.outcome = data.values.tolist()
 
             # Check that files are present
