@@ -147,9 +147,9 @@ class Echo(torchvision.datasets.VisionDataset):
                     self.trace[filename][frame] = np.array(self.trace[filename][frame])
 
             # A small number of videos are missing traces; remove these videos
-            keep = [len(self.frames[f]) >= 2 for f in self.fnames]
-            self.fnames = [f for (f, k) in zip(self.fnames, keep) if k]
-            self.outcome = [f for (f, k) in zip(self.outcome, keep) if k]
+            # keep = [len(self.frames[f]) >= 2 for f in self.fnames]
+            # self.fnames = [f for (f, k) in zip(self.fnames, keep) if k]
+            # self.outcome = [f for (f, k) in zip(self.outcome, keep) if k]
 
     def __getitem__(self, index):
         # Find filename of video
