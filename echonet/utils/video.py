@@ -25,6 +25,7 @@ import echonet
     default="r2plus1d_18")
 @click.option("--pretrained/--random", default=True)
 @click.option("--weights", type=click.Path(exists=True, dir_okay=False), default=None)
+@click.option("--full/--last", default=True)
 @click.option("--run_test/--skip_test", default=False)
 @click.option("--num_epochs", type=int, default=45)
 @click.option("--lr", type=float, default=1e-4)
@@ -45,6 +46,7 @@ def run(
     model_name="r2plus1d_18",
     pretrained=True,
     weights=None,
+    full=True,
 
     run_test=False,
     num_epochs=45,
@@ -132,7 +134,11 @@ def run(
         model.load_state_dict(checkpoint['state_dict'])
 
     # Set up optimizer
-    optim = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
+    if full:
+        optim = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
+    else:
+        # TODO make robust (breaks without dataparallel)
+        optim = torch.optim.SGD(model.module.fc.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
     if lr_step_period is None:
         lr_step_period = math.inf
     scheduler = torch.optim.lr_scheduler.StepLR(optim, lr_step_period)
