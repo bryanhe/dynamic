@@ -18,7 +18,7 @@ def score(patients, ef, pred):
 
     return sklearn.metrics.r2_score(a, b), math.sqrt(sklearn.metrics.mean_squared_error(a, b))
 
-def bootstrap(ef, pred, n=100):
+def bootstrap(ef, pred, n=1000):
     point = score(pred.keys(), ef, pred)
 
     patients = list(pred.keys())
@@ -44,7 +44,15 @@ def main(src="output/ef"):
                     assert ef[patient][accession] == e
                 ef[patient][accession] = e
 
-    for method in ["blind", "scratch", "lr_1e-4"]: # , "transfer"]:
+    for method in [
+        "blind",
+        "scratch",
+        "lr_1e-4",
+        "lr_1e-5",
+        "lr_1e-6",
+        "transfer",
+        ]:
+
         print(method)
         print("=" * len(method))
         views = ["A4C", "PSAX"]
@@ -65,7 +73,7 @@ def main(src="output/ef"):
             # print(view, score(pred[view].keys(), ef, pred[view]))
             print(view)
             for (score, (p, l, h)) in zip(["R2", "RMSE"], bootstrap(ef, pred[view])):
-                print("{}: {} ({} - {})".format(score, p, l, h))
+                print("{}: {:.2f} ({:.2f} - {:.2f})".format(score, p, l, h))
             print()
 
         merged = collections.defaultdict(lambda : {})
@@ -81,7 +89,7 @@ def main(src="output/ef"):
                     merged[patient][accession] = sum(p) / len(p)
         print("Both Views")
         for (score, (p, l, h)) in zip(["R2", "RMSE"], bootstrap(ef, merged)):
-            print("{}: {} ({} - {})".format(score, p, l, h))
+            print("{}: {:.2f} ({:.2f} - {:.2f})".format(score, p, l, h))
         print()
 
 
