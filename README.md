@@ -139,3 +139,4 @@ done
   scripts/process_er.py data/er_raw_data/ data/er_processed/
 
   scripts/server/server.py data/er_processed/ data/labels
+  scripts/prepare_er.py data/labels/ data/er_processed/ data/er/
