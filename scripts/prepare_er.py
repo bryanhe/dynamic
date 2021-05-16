@@ -40,6 +40,41 @@ def main(labels, videos, dest, splits=10):
             video = np.array(list(map(lambda x: cv2.resize(x, size, interpolation=cv2.INTER_AREA), video.transpose((1, 2, 3, 0))))).transpose((3, 0, 1, 2))
             echonet.utils.savevideo(os.path.join(dest, "Videos", os.path.splitext(filename)[0] + ".avi"), video, fps=50)
 
+    label = {}
+    for annotator in ["DD", "TT"]:
+        label[annotator] = {}
+        for pkl_name in os.listdir(os.path.join(labels, annotator)):
+            with open(os.path.join(labels, annotator, pkl_name), "rb") as f:
+                data = pickle.load(f)
+                if "EF" in data and "Interpretable" in data:
+                    filename = os.path.splitext(pkl_name)[0]
+                    if not os.path.isfile(os.path.join(dest, "Videos", filename + ".avi")):
+                        print("{} is not parseable.".format(filename))
+                        continue
+                    label[annotator][pkl_name] = (data["EF"], data["Interpretable"])
+
+    ef = collections.Counter()
+    interpretable = collections.Counter()
+    for pkl_name in label["TT"]:
+        if pkl_name in label["DD"] and pkl_name in label["TT"]:
+            if label["DD"][pkl_name][0] == "Severely Reduced" and label["TT"][pkl_name][0] == "Normal":
+                print(pkl_name)
+            ef[label["DD"][pkl_name][0], label["TT"][pkl_name][0]] += 1
+            interpretable[label["DD"][pkl_name][1], label["TT"][pkl_name][1]] += 1
+
+
+    print("ef")
+    for i in ["Normal", "Slightly Reduced", "Moderately Reduced", "Severely Reduced"]:
+        for j in ["Normal", "Slightly Reduced", "Moderately Reduced", "Severely Reduced"]:
+            print(ef[i, j], end="\t")
+        print()
+
+    print("interpretable")
+    for i in ["Yes", "Partial", "No"]:
+        for j in ["Yes", "Partial", "No"]:
+            print(interpretable[i, j], end="\t")
+        print()
+
     files = []
     assert "TT" in os.listdir(labels)
     i = 0
@@ -53,6 +88,16 @@ def main(labels, videos, dest, splits=10):
                     continue
                 files.append((filename + ".avi", data["EF"], data["Interpretable"], i % splits))
                 i += 1
+
+    _, ef, interpretable, _ = zip(*files)
+
+    print(collections.Counter(e for (e, i) in zip(ef, interpretable) if i != "No"))
+    print(collections.Counter(interpretable))
+
+    with open(os.path.join(dest, "FileList.csv"), "w") as f:
+        f.write("FileName,EF,Interpretable,Split\n")
+        for (filename, ef, interpretable, s) in files:
+            f.write("{},{},{}\n".format(filename, ef, interpretable))
 
     for split in range(splits):
         os.makedirs(os.path.join(dest, "split_{}".format(split)), exist_ok=True)
