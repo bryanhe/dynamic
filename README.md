@@ -140,3 +140,16 @@ done
 
   scripts/server/server.py data/er_processed/ data/labels
   scripts/prepare_er.py data/labels/ data/er_processed/ data/er/
+
+for seed in `seq 0 9`
+do
+        echonet video --data_dir data/er/split_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 0 --output output/er/ef/blind_${seed}/ --run_test
+        echonet video --data_dir data/er/split_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr 1e-4 --output output/er/ef/lr_1e-4_${seed}/ --run_test
+        # echonet video --data_dir data/er/split_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-4 --output output/er/ef/lr_1e-4_${seed}/ --run_test
+        # echonet video --data_dir data/er/split_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-5 --output output/er/ef/lr_1e-5_${seed}/ --run_test
+        # echonet video --data_dir data/er/split_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 1000 --lr 1e-6 --output output/er/ef/lr_1e-6_${seed}/ --run_test
+        echonet video --data_dir data/er/split_${seed}/ --num_epochs 45 --lr 1e-4 --output output/er/ef/scratch_${seed}/ --run_test
+        echonet video --data_dir data/er/split_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 10 --lr 1e-4 --last --output output/er/ef/transfer_${seed}/ --run_test
+    done
+done
+scripts/analyze_er.py output/er/ef/
