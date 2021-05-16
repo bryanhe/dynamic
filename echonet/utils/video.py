@@ -18,21 +18,21 @@ import echonet
 @click.command("video")
 @click.option("--data_dir", type=click.Path(exists=True, file_okay=False), default=None)
 @click.option("--output", type=click.Path(file_okay=False), default=None)
-@click.option("--task", type=str, default="EF")
+@click.option("--task", type=str, default=["EF", "Interpretable"])
 @click.option("--model_name", type=click.Choice(
     sorted(name for name in torchvision.models.video.__dict__
-           if name.islower() and not name.startswith("__") and
-           callable(torchvision.models.video.__dict__[name]))),
+           if name.islower() and not name.startswith("__") and callable(torchvision.models.video.__dict__[name]))),
     default="r2plus1d_18")
 @click.option("--pretrained/--random", default=True)
 @click.option("--weights", type=click.Path(exists=True, dir_okay=False), default=None)
+@click.option("--full/--last", default=True)
 @click.option("--run_test/--skip_test", default=False)
 @click.option("--num_epochs", type=int, default=45)
 @click.option("--lr", type=float, default=1e-4)
 @click.option("--weight_decay", type=float, default=1e-4)
 @click.option("--lr_step_period", type=int, default=15)
 @click.option("--frames", type=int, default=32)
-@click.option("--period", type=int, default=32)
+@click.option("--period", type=int, default=2)
 @click.option("--num_train_patients", type=int, default=None)
 @click.option("--num_workers", type=int, default=4)
 @click.option("--batch_size", type=int, default=20)
@@ -41,11 +41,12 @@ import echonet
 def run(
     data_dir=None,
     output=None,
-    task="EF",
+    task=["EF", "Interpretable"],
 
     model_name="r2plus1d_18",
     pretrained=True,
     weights=None,
+    full=True,
 
     run_test=False,
     num_epochs=45,
@@ -124,7 +125,6 @@ def run(
     model = torchvision.models.video.__dict__[model_name](pretrained=pretrained)
 
     model.fc = torch.nn.Linear(model.fc.in_features, 1)
-    model.fc.bias.data[0] = 55.6
     if device.type == "cuda":
         model = torch.nn.DataParallel(model)
     model.to(device)
@@ -132,9 +132,18 @@ def run(
     if weights is not None:
         checkpoint = torch.load(weights)
         model.load_state_dict(checkpoint['state_dict'])
+    weight = model.module.fc.weight.data
+    bias = model.module.fc.bias.data
+    model.module.fc = torch.nn.Linear(model.module.fc.in_features, 2).to(device)
+    model.module.fc.weight.data[0, :] = weight
+    model.module.fc.bias.data[0] = bias
 
     # Set up optimizer
-    optim = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
+    if full:
+        optim = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
+    else:
+        # TODO make robust (breaks without dataparallel)
+        optim = torch.optim.SGD(model.module.fc.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
     if lr_step_period is None:
         lr_step_period = math.inf
     scheduler = torch.optim.lr_scheduler.StepLR(optim, lr_step_period)
@@ -174,6 +183,7 @@ def run(
             f.write("Starting run from scratch\n")
 
         for epoch in range(epoch_resume, num_epochs):
+
             print("Epoch #{}".format(epoch), flush=True)
             for phase in ['train', 'val']:
                 start_time = time.time()
@@ -184,16 +194,28 @@ def run(
                 dataloader = torch.utils.data.DataLoader(
                     ds, batch_size=batch_size, num_workers=num_workers, shuffle=True, pin_memory=(device.type == "cuda"), drop_last=(phase == "train"))
 
+                if epoch == 0 and phase == "train":
+                    print("Set initial value")
+                    ef = []
+                    interpretable = []
+                    for (_, y) in tqdm.tqdm(dataloader):
+                        ef.extend(y[0].tolist())
+                        interpretable.extend(y[1].tolist())
+
+                    p0 = sum(e for (e, i) in zip(ef, interpretable) if i == 1) / sum(interpretable)
+                    p1 = sum(interpretable) / len(interpretable)
+                    model.module.fc.bias.data[0] = math.log(p0 / (1 - p0))
+                    model.module.fc.bias.data[1] = math.log(p1 / (1 - p1))
+                    model.module.fc.weight.data[:] = 0
+
                 loss, yhat, y = echonet.utils.video.run_epoch(model, dataloader, phase == "train", optim, device)
-                f.write("{},{},{},{},{},{},{},{},{}\n".format(epoch,
-                                                              phase,
-                                                              loss,
-                                                              sklearn.metrics.r2_score(y, yhat),
-                                                              time.time() - start_time,
-                                                              y.size,
-                                                              sum(torch.cuda.max_memory_allocated() for i in range(torch.cuda.device_count())),
-                                                              sum(torch.cuda.max_memory_reserved() for i in range(torch.cuda.device_count())),
-                                                              batch_size))
+
+                f.write("{},{},{},{},{},{}\n".format(
+                    epoch,
+                    phase,
+                    *loss,
+                    *[sklearn.metrics.roc_auc_score(y[y[:, i] != 0.5, i], yhat[y[:, i] != 0.5, i]) for i in range(y.shape[1])],
+                ))
                 f.flush()
             scheduler.step()
 
@@ -210,6 +232,7 @@ def run(
                 'scheduler_dict': scheduler.state_dict(),
             }
             torch.save(save, os.path.join(output, "checkpoint.pt"))
+            loss = loss.sum()
             if loss < bestLoss:
                 torch.save(save, os.path.join(output, "best.pt"))
                 bestLoss = loss
@@ -222,15 +245,18 @@ def run(
             f.flush()
 
         if run_test:
-            for split in ["val", "test"]:
+            # for split in ["val", "test"]:
+            for split in ["test"]:
                 # Performance without test-time augmentation
                 dataloader = torch.utils.data.DataLoader(
                     echonet.datasets.Echo(root=data_dir, split=split, **kwargs),
                     batch_size=batch_size, num_workers=num_workers, shuffle=True, pin_memory=(device.type == "cuda"))
                 loss, yhat, y = echonet.utils.video.run_epoch(model, dataloader, False, None, device)
-                f.write("{} (one clip) R2:   {:.3f} ({:.3f} - {:.3f})\n".format(split, *echonet.utils.bootstrap(y, yhat, sklearn.metrics.r2_score)))
+                # f.write("{} (one clip) R2:   {:.3f} ({:.3f} - {:.3f})\n".format(split, *echonet.utils.bootstrap(y, yhat, sklearn.metrics.r2_score)))
                 f.write("{} (one clip) MAE:  {:.2f} ({:.2f} - {:.2f})\n".format(split, *echonet.utils.bootstrap(y, yhat, sklearn.metrics.mean_absolute_error)))
                 f.write("{} (one clip) RMSE: {:.2f} ({:.2f} - {:.2f})\n".format(split, *tuple(map(math.sqrt, echonet.utils.bootstrap(y, yhat, sklearn.metrics.mean_squared_error)))))
+                for i in range(y.shape[1]):
+                    f.write("{} (one clip) AUC:  {:.2f} ({:.2f} - {:.2f})\n".format(split, *echonet.utils.bootstrap(y[y[:, i] != 0.5, i], yhat[y[:, i] != 0.5, i], sklearn.metrics.roc_auc_score)))
                 f.flush()
 
                 # Performance with test-time augmentation
@@ -238,16 +264,19 @@ def run(
                 dataloader = torch.utils.data.DataLoader(
                     ds, batch_size=1, num_workers=num_workers, shuffle=False, pin_memory=(device.type == "cuda"))
                 loss, yhat, y = echonet.utils.video.run_epoch(model, dataloader, False, None, device, save_all=True, block_size=batch_size)
-                f.write("{} (all clips) R2:   {:.3f} ({:.3f} - {:.3f})\n".format(split, *echonet.utils.bootstrap(y, np.array(list(map(lambda x: x.mean(), yhat))), sklearn.metrics.r2_score)))
-                f.write("{} (all clips) MAE:  {:.2f} ({:.2f} - {:.2f})\n".format(split, *echonet.utils.bootstrap(y, np.array(list(map(lambda x: x.mean(), yhat))), sklearn.metrics.mean_absolute_error)))
-                f.write("{} (all clips) RMSE: {:.2f} ({:.2f} - {:.2f})\n".format(split, *tuple(map(math.sqrt, echonet.utils.bootstrap(y, np.array(list(map(lambda x: x.mean(), yhat))), sklearn.metrics.mean_squared_error)))))
-                f.flush()
+                # f.write("{} (all clips) R2:   {:.3f} ({:.3f} - {:.3f})\n".format(split, *echonet.utils.bootstrap(y, np.array(list(map(lambda x: x.mean(), yhat))), sklearn.metrics.r2_score)))
+                # f.write("{} (all clips) MAE:  {:.2f} ({:.2f} - {:.2f})\n".format(split, *echonet.utils.bootstrap(y, np.array(list(map(lambda x: x.mean(), yhat))), sklearn.metrics.mean_absolute_error)))
+                # f.write("{} (all clips) RMSE: {:.2f} ({:.2f} - {:.2f})\n".format(split, *tuple(map(math.sqrt, echonet.utils.bootstrap(y, np.array(list(map(lambda x: x.mean(), yhat))), sklearn.metrics.mean_squared_error)))))
+                # for i in range(y.shape[1]):
+                #     f.write("{} (all clips) AUC:  {:.2f} ({:.2f} - {:.2f})\n".format(split, *echonet.utils.bootstrap(y[y[:, i] != 0.5, i], yhat[y[:, i] != 0.5, i], sklearn.metrics.roc_auc_score)))
+                # f.flush()
 
                 # Write full performance to file
                 with open(os.path.join(output, "{}_predictions.csv".format(split)), "w") as g:
                     for (filename, pred) in zip(ds.fnames, yhat):
                         for (i, p) in enumerate(pred):
-                            g.write("{},{},{:.4f}\n".format(filename, i, p))
+                            g.write("{},{},{:.4f},{:.4f}\n".format(filename, i, *p))
+                return
                 echonet.utils.latexify()
                 yhat = np.array(list(map(lambda x: x.mean(), yhat)))
 
@@ -268,13 +297,13 @@ def run(
                 plt.savefig(os.path.join(output, "{}_scatter.pdf".format(split)))
                 plt.close(fig)
 
-                # Plot AUROC
-                fig = plt.figure(figsize=(3, 3))
-                plt.plot([0, 1], [0, 1], linewidth=1, color="k", linestyle="--")
-                for thresh in [35, 40, 45, 50]:
-                    fpr, tpr, _ = sklearn.metrics.roc_curve(y > thresh, yhat)
-                    print(thresh, sklearn.metrics.roc_auc_score(y > thresh, yhat))
-                    plt.plot(fpr, tpr)
+                # # Plot AUROC
+                # fig = plt.figure(figsize=(3, 3))
+                # plt.plot([0, 1], [0, 1], linewidth=1, color="k", linestyle="--")
+                # for thresh in [35, 40, 45, 50]:
+                #     fpr, tpr, _ = sklearn.metrics.roc_curve(y > thresh, yhat)
+                #     print(thresh, sklearn.metrics.roc_auc_score(y > thresh, yhat))
+                #     plt.plot(fpr, tpr)
 
                 plt.axis([-0.01, 1.01, -0.01, 1.01])
                 plt.xlabel("False Positive Rate")
@@ -306,9 +335,8 @@ def run_epoch(model, dataloader, train, optim, device, save_all=False, block_siz
     model.train(train)
 
     total = 0  # total training loss
-    n = 0      # number of videos processed
-    s1 = 0     # sum of ground truth EF
-    s2 = 0     # Sum of ground truth EF squared
+    n = 0      # numerator
+    d = 0      # denominator
 
     yhat = []
     y = []
@@ -316,6 +344,12 @@ def run_epoch(model, dataloader, train, optim, device, save_all=False, block_siz
     with torch.set_grad_enabled(train):
         with tqdm.tqdm(total=len(dataloader)) as pbar:
             for (X, outcome) in dataloader:
+
+                outcome = torch.vstack(outcome).transpose(0, 1)
+                outcome[outcome[:, 1] == 0, 0] = 0.5  # TODO: why does math.nan break this
+
+                n += outcome.nansum(0).numpy()
+                d += (~torch.isnan(outcome)).sum(0).numpy()
 
                 y.append(outcome.numpy())
                 X = X.to(device)
@@ -326,34 +360,33 @@ def run_epoch(model, dataloader, train, optim, device, save_all=False, block_siz
                     batch, n_clips, c, f, h, w = X.shape
                     X = X.view(-1, c, f, h, w)
 
-                s1 += outcome.sum()
-                s2 += (outcome ** 2).sum()
-
                 if block_size is None:
                     outputs = model(X)
                 else:
                     outputs = torch.cat([model(X[j:(j + block_size), ...]) for j in range(0, X.shape[0], block_size)])
+                n_targets = outputs.shape[1]
 
                 if save_all:
-                    yhat.append(outputs.view(-1).to("cpu").detach().numpy())
+                    yhat.append(outputs.view(-1, n_targets).to("cpu").detach().numpy())
 
                 if average:
                     outputs = outputs.view(batch, n_clips, -1).mean(1)
 
                 if not save_all:
-                    yhat.append(outputs.view(-1).to("cpu").detach().numpy())
+                    yhat.append(outputs.view(-1, n_targets).to("cpu").detach().numpy())
 
-                loss = torch.nn.functional.mse_loss(outputs.view(-1), outcome)
+                loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, outcome, reduction="none")
+                loss[torch.isnan(outcome)] = 0
 
                 if train:
                     optim.zero_grad()
-                    loss.backward()
+                    loss[~torch.isnan(outcome)].sum().backward()
                     optim.step()
 
-                total += loss.item() * X.size(0)
-                n += X.size(0)
+                total += loss.sum(0).detach().cpu().numpy()
 
-                pbar.set_postfix_str("{:.2f} ({:.2f}) / {:.2f}".format(total / n, loss.item(), s2 / n - (s1 / n) ** 2))
+                p = n / d
+                pbar.set_postfix_str("{:.2f} {:.2f} ({:.2f}) ({:.2f}) / {:.2f} {:.2f}".format(*(total / d), *(loss.sum(0).detach().cpu().numpy() / (~torch.isnan(outcome)).sum(0).cpu().numpy()), *(-p * np.log(p) - (1 - p) * np.log(1 - p))))
                 pbar.update()
 
     if not save_all:
