@@ -36,27 +36,29 @@ def _index():
 def index(user):
     print(DATA_DIR)
     print(os.listdir(DATA_DIR))
-    videos = os.listdir(DATA_DIR)
-    videos = sorted(map(lambda v: os.path.splitext(v)[0], videos))
-    try:
-        pkl = []
-        for filename in os.listdir(os.path.join(SAVE_DIR, user)):
-            with open(os.path.join(SAVE_DIR, user, filename), "rb") as f:
-                data = pickle.load(f)
-                if "EF" in data and "Interpretable" in data:
-                    pkl.append(os.path.splitext(filename)[0])
-        pkl = set(pkl)
-    except FileNotFoundError:
-        pkl = set()
-
     todo = []
     done = []
-    for v in videos:
-        if v in pkl:
-            done.append(v)
-        else:
-            todo.append(v)
-    
+
+    if user != "":
+        videos = os.listdir(DATA_DIR)
+        videos = sorted(map(lambda v: os.path.splitext(v)[0], videos))
+        try:
+            pkl = []
+            for filename in os.listdir(os.path.join(SAVE_DIR, user)):
+                with open(os.path.join(SAVE_DIR, user, filename), "rb") as f:
+                    data = pickle.load(f)
+                    if "EF" in data and "Interpretable" in data:
+                        pkl.append(os.path.splitext(filename)[0])
+            pkl = set(pkl)
+        except FileNotFoundError:
+            pkl = set()
+
+        for v in videos:
+            if v in pkl:
+                done.append(v)
+            else:
+                todo.append(v)
+        
     return flask.render_template("index.html", users=USERS, user=user, todo=todo, done=done)
 
 @app.route("/<string:user>/<string:video>", methods=["GET", "POST"])
