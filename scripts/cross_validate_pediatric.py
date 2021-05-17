@@ -9,8 +9,8 @@ import pandas
 def main(src):
     for view in ["A4C", "PSAX"]:
         data = pandas.read_csv(os.path.join(src, view, "FileList.csv"), index_col=0)
-        data["Split"] = (data["Split"] // 2)  # TODO: this is just to account for splits going to 20; delete this line once process_pediatric is fixed and rerun
         for split in range(10):
+            os.makedirs(os.path.join(src, "{}_{}".format(view, split)), exist_ok=True)
             try:
                 os.symlink(os.path.join("..", view, "Videos"), os.path.join(src, "{}_{}".format(view, split), "Videos"))
             except:
