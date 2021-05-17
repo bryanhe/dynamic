@@ -16,7 +16,10 @@ def score(patients, ef, pred):
             a.append(ef[patient][accession])
             b.append(pred[patient][accession])
 
-    return sklearn.metrics.r2_score(a, b), math.sqrt(sklearn.metrics.mean_squared_error(a, b))
+    try:
+        return sklearn.metrics.r2_score(a, b), math.sqrt(sklearn.metrics.mean_squared_error(a, b))
+    except:
+        return math.nan, math.nan
 
 def bootstrap(ef, pred, n=1000):
     point = score(pred.keys(), ef, pred)
