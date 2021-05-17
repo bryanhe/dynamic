@@ -30,13 +30,14 @@ def bootstrap(ef, pred, n=1000):
     return [(p, s[round(0.025 * len(s))], s[round(0.975 * len(s))]) for (p, s) in zip(point, samples)]
 
 
-def main(src="output/ef"):
+def main(src="output/pediatric/ef"):
     ef = collections.defaultdict(dict)
     for view in ["A4C", "PSAX"]:
         with open("data/pediatric/{}/FileList.csv".format(view)) as f:
-            assert f.readline() == "FileName,EF,Split\n"
+            assert f.readline() == "FileName,EF,Sex,Age,Weight,Height,Split\n"
+
             for line in f:
-                filename, e, _ = line.split(",")
+                filename, e, *_ = line.split(",")
                 patient, accession, _ = os.path.splitext(filename)[0].split("-")
                 e = float(e)
 
