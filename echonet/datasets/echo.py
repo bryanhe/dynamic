@@ -116,35 +116,36 @@ class Echo(torchvision.datasets.VisionDataset):
                 raise FileNotFoundError(os.path.join(self.root, "Videos", sorted(missing)[0]))
 
             # Load traces
-            self.frames = collections.defaultdict(list)
-            self.trace = collections.defaultdict(_defaultdict_of_lists)
+            if False:
+                self.frames = collections.defaultdict(list)
+                self.trace = collections.defaultdict(_defaultdict_of_lists)
 
-            with open(os.path.join(self.root, "VolumeTracings.csv")) as f:
-                header = f.readline().strip().split(",")
-                if header == ["FileName", "X1", "Y1", "X2", "Y2", "Frame"]:
-                    for line in f:
-                        filename, x1, y1, x2, y2, frame = line.strip().split(',')
-                        x1 = float(x1)
-                        y1 = float(y1)
-                        x2 = float(x2)
-                        y2 = float(y2)
-                        frame = int(frame)
-                        if frame not in self.trace[filename]:
-                            self.frames[filename].append(frame)
-                        self.trace[filename][frame].append((x1, y1, x2, y2))
-                if header == ["FileName", "X", "Y", "Frame"]:
-                    # TODO: probably could merge
-                    for line in f:
-                        filename, x, y, frame = line.strip().split(',')
-                        x = float(x)
-                        y = float(y)
-                        frame = int(frame)
-                        if frame not in self.trace[filename]:
-                            self.frames[filename].append(frame)
-                        self.trace[filename][frame].append((x, y))
-            for filename in self.frames:
-                for frame in self.frames[filename]:
-                    self.trace[filename][frame] = np.array(self.trace[filename][frame])
+                with open(os.path.join(self.root, "VolumeTracings.csv")) as f:
+                    header = f.readline().strip().split(",")
+                    if header == ["FileName", "X1", "Y1", "X2", "Y2", "Frame"]:
+                        for line in f:
+                            filename, x1, y1, x2, y2, frame = line.strip().split(',')
+                            x1 = float(x1)
+                            y1 = float(y1)
+                            x2 = float(x2)
+                            y2 = float(y2)
+                            frame = int(frame)
+                            if frame not in self.trace[filename]:
+                                self.frames[filename].append(frame)
+                            self.trace[filename][frame].append((x1, y1, x2, y2))
+                    if header == ["FileName", "X", "Y", "Frame"]:
+                        # TODO: probably could merge
+                        for line in f:
+                            filename, x, y, frame = line.strip().split(',')
+                            x = float(x)
+                            y = float(y)
+                            frame = int(frame)
+                            if frame not in self.trace[filename]:
+                                self.frames[filename].append(frame)
+                            self.trace[filename][frame].append((x, y))
+                for filename in self.frames:
+                    for frame in self.frames[filename]:
+                        self.trace[filename][frame] = np.array(self.trace[filename][frame])
 
             # A small number of videos are missing traces; remove these videos
             # keep = [len(self.frames[f]) >= 2 for f in self.fnames]
