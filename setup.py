@@ -25,6 +25,7 @@ setuptools.setup(
         "click",
         "numpy",
         "pandas",
+        "pydicom",  # TODO: is this actually needed (might only be for preprocessing)
         "torch",
         "torchvision",
         "opencv-python",
