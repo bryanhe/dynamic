@@ -65,6 +65,7 @@ class Echo(torchvision.datasets.VisionDataset):
                  length=16, period=2,
                  max_length=250,
                  clips=1,
+                 max_clips=100,
                  pad=None,
                  noise=None,
                  target_transform=None,
@@ -84,6 +85,7 @@ class Echo(torchvision.datasets.VisionDataset):
         self.max_length = max_length
         self.period = period
         self.clips = clips
+        self.max_clips = max_clips
         self.pad = pad
         self.noise = noise
         self.target_transform = target_transform
@@ -209,6 +211,11 @@ class Echo(torchvision.datasets.VisionDataset):
         if self.clips == "all":
             # Take all possible clips of desired length
             start = np.arange(f - (length - 1) * self.period)
+            if start.size > self.max_clips:
+                # TODO: this messes up the clip number in test-time aug
+                # Might need to have a clip index target
+                start = np.random.choice(start, self.max_clips, replace=False)
+                start.sort()
         else:
             # Take random clips from video
             start = np.random.choice(f - (length - 1) * self.period, self.clips)
