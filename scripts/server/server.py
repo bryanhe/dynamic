@@ -19,7 +19,7 @@ USERS = None
                 type=click.Path(file_okay=False))
 @click.option('--host', default='0.0.0.0')
 @click.option('-p', '--port', type=int, default=8000)
-def main(data_dir, save_dir, host, port, users=["BH", "DD", "TT", "YD"]):
+def main(data_dir, save_dir, host, port, users=["BH", "DD", "TT", "Consensus"]):
     global DATA_DIR
     global SAVE_DIR
     global USERS
@@ -32,33 +32,78 @@ def main(data_dir, save_dir, host, port, users=["BH", "DD", "TT", "YD"]):
 def _index():
     return index("")
 
-@app.route("/<string:user>/")
-def index(user):
-    print(DATA_DIR)
-    print(os.listdir(DATA_DIR))
-    todo = []
-    done = []
-
-    if user != "":
+def get_videos(user, split):
+    if user == "":
+        if split:
+            return [], []
+        else:
+            return []
+    else:
         videos = os.listdir(DATA_DIR)
         videos = sorted(map(lambda v: os.path.splitext(v)[0], videos))
+        if user == "Consensus":
+            labels = []
+            for video in videos:
+                try:
+                    with open(os.path.join(SAVE_DIR, "TT", "{}.pkl".format(os.path.splitext(video)[0])), "rb") as f:
+                        data1 = pickle.load(f)
+                    with open(os.path.join(SAVE_DIR, "DD", "{}.pkl".format(os.path.splitext(video)[0])), "rb") as f:
+                        data2 = pickle.load(f)
+                    score = {
+                        "Normal": 3,
+                        "Slightly Reduced": 2,
+                        "Moderately Reduced": 1,
+                        "Severely Reduced": 0,
+                    }
+                    if "EF" in data1 and "EF" in data2:
+                        labels.append((video, score[data1["EF"]], score[data2["EF"]]))
+                except EOFError:
+                    pass
+
+            videos = []
+            for (v, l1, l2) in labels:
+                if abs(l1 - l2) == 3:
+                    videos.append(v)
+            for (v, l1, l2) in labels:
+                if abs(l1 - l2) == 2:
+                    videos.append(v)
+            for (v, l1, l2) in labels:
+                if abs(l1 - l2) == 1 and sorted([l1, l2]) == [1, 2]:
+                    videos.append(v)
+
+        if not split:
+            return videos
+
         try:
             pkl = []
             for filename in os.listdir(os.path.join(SAVE_DIR, user)):
-                with open(os.path.join(SAVE_DIR, user, filename), "rb") as f:
-                    data = pickle.load(f)
-                    if "EF" in data and "Interpretable" in data:
-                        pkl.append(os.path.splitext(filename)[0])
+                try:
+                    with open(os.path.join(SAVE_DIR, user, filename), "rb") as f:
+                        data = pickle.load(f)
+                except EOFError:
+                    data = {}
+                if "EF" in data and "Interpretable" in data:
+                    pkl.append(os.path.splitext(filename)[0])
             pkl = set(pkl)
         except FileNotFoundError:
+            # Dir doesn't even exist
             pkl = set()
+
+        todo = []
+        done = []
 
         for v in videos:
             if v in pkl:
                 done.append(v)
             else:
                 todo.append(v)
-        
+
+        return todo, done
+
+@app.route("/<string:user>/")
+def index(user):
+    todo, done = get_videos(user, True)
+
     return flask.render_template("index.html", users=USERS, user=user, todo=todo, done=done)
 
 @app.route("/<string:user>/<string:video>", methods=["GET", "POST"])
@@ -75,8 +120,8 @@ def label(user, video):
                 print("except")
                 data = {}
 
-        videos = os.listdir(DATA_DIR)
-        videos = sorted(map(lambda v: os.path.splitext(v)[0], videos))
+        videos = get_videos(user, False)
+
         index = videos.index(video)
         total = len(videos)
         prev = None
