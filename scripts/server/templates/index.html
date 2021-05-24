@@ -8,8 +8,8 @@
 <body>
   <select name="users" onchange="location=this.options[this.selectedIndex].value;">
     <option value="/">--Select User--</option>
-    {% for user in users %}
-    <option value="/{{ user }}" {% if user == "{{ user }}"%} selected {% endif %}>{{ user }}</option>
+    {% for u in users %}
+    <option value="/{{ u }}" {% if u == user %} selected {% endif %}>{{ u }}</option>
     {% endfor %}
   </select>
   {% if user != "" %}
