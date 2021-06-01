@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import numpy as np
 import matplotlib.pyplot as plt
 import random
 import math
@@ -132,6 +133,12 @@ def main(src="output/pediatric/ef"):
             merged_mask = {p: {a: merged[p][a] for a in merged[p] if (p, a) in mask} for p in merged}
             merged_mask = {p: merged_mask[p] for p in merged if merged_mask[p] != {}}
             print("Visits:", sum(map(len, ef_mask.values())))
+            print("EF:", 
+                  np.mean(sum(map(lambda x: list(x.values()), ef_mask.values()), [])),
+                  "+/-",
+                  np.std(sum(map(lambda x: list(x.values()), ef_mask.values()), [])),
+                  )
+
 
             for (score, (p, l, h)) in zip(["R2", "RMSE"], bootstrap(ef_mask, merged_mask)):
                 print("{}: {:.2f} ({:.2f} - {:.2f})".format(score, p, l, h))
