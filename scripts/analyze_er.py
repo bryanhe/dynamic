@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import random
@@ -61,7 +62,31 @@ def main(src="output/er/ef"):
             pred.update(p)
 
         # pred = {patient: sum(pred[view][patient][accession]) / len(pred[view][patient][accession]) for accession in pred[view][patient] if pred[view][patient][accession] != []} for patient in pred[view]}
-        pred = {patient: np.array(pred[patient]).mean(0) for patient in pred}  # TODO: meaning in logit space is a bit weird
+        pred = {patient: np.array(pred[patient]) for patient in pred}  # TODO: meaning in logit space is a bit weird
+
+        fig = plt.figure(figsize=(3, 3))
+        for (i, (m, s)) in enumerate(sorted((pred[patient][:, 1].mean(), pred[patient][:, 1].std()) for patient in pred)):
+            plt.plot([i, i], [m - s, m + s], color="k", linewidth=1)
+        plt.xlabel("Video")
+        plt.ylabel('Interpretability (logit)')
+        # plt.title("EF ROC")
+        plt.tight_layout()
+        des = "output/er_analyze/fig"
+        os.makedirs(des, exist_ok=True)
+        plt.savefig(os.path.join(des, "interpretability_{}.pdf".format(method)))
+        breakpoint()
+
+        pred = {patient: np.array(pred[patient]) for patient in pred}  # TODO: meaning in logit space is a bit weird
+
+        FILTER_MIXED_INTERPRETABILITY = True
+        if FILTER_MIXED_INTERPRETABILITY:
+            print(len(pred))
+            pred = {patient: pred[patient] for patient in pred if pred[patient][:, 1].min() < 0.0 and pred[patient][:, 1].max() > 2.0}
+            print(len(pred))
+            breakpoint()
+            print(pred.keys())
+        ef_hat = {patient: (pred[patient][:, 0] * 1 / (1 + np.exp(-pred[patient][:, 1]))).sum() / (1 / (1 + np.exp(-pred[patient][:, 1]))).sum() for patient in pred}
+        pred = {patient: pred[patient].mean(0) for patient in pred}  # TODO: meaning in logit space is a bit weird
         ef_hat = {patient: pred[patient][0] for patient in pred}
         interpretable_hat = {patient: pred[patient][1] for patient in pred}
 
@@ -69,6 +94,43 @@ def main(src="output/er/ef"):
         for (score, (p, l, h)) in zip(["AUC", "CE"], bootstrap({patient: 1 if ef[patient] == "Normal" else 0 for patient in ef if interpretable[patient] != "No"}, {patient: ef_hat[patient] for patient in ef_hat if interpretable[patient] != "No"})):
             print("{}: {:.2f} ({:.2f} - {:.2f})".format(score, p, l, h))
         print()
+
+        bins = 4
+        inter = sorted(interpretable_hat.values())
+        thresh = [inter[i * len(inter) // bins] for i in range(bins)] + [math.inf]
+
+        for bin in range(bins):
+            print("Bin #{}".format(bin + 1))
+            print({patient for patient in ef if interpretable[patient] != "No" and patient in interpretable_hat and thresh[bin] <= interpretable_hat[patient] < thresh[bin + 1]})
+            for (score, (p, l, h)) in zip(["AUC", "CE"], bootstrap(
+                    {patient: 1 if ef[patient] == "Normal" else 0 for patient in ef if interpretable[patient] != "No" and patient in interpretable_hat and thresh[bin] <= interpretable_hat[patient] < thresh[bin + 1]},
+                    {patient: ef_hat[patient] for patient in ef_hat if interpretable[patient] != "No" and patient in interpretable_hat and thresh[bin] <= interpretable_hat[patient] < thresh[bin + 1]},
+                )):
+                print("{}: {:.2f} ({:.2f} - {:.2f})".format(score, p, l, h))
+            print()
+
+        def sigmoid(x):
+            return 1 / (1 + math.exp(-x))
+        for patient in ef_hat:
+            with open(os.path.join("data", "labels", "DD", os.path.splitext(patient)[0] + ".pkl"), "rb") as f:
+                dd = pickle.load(f)
+            with open(os.path.join("data", "labels", "TT", os.path.splitext(patient)[0] + ".pkl"), "rb") as f:
+                tt = pickle.load(f)
+
+            if interpretable_hat[patient] > 3 and abs(ef_hat[patient]) < 2:
+                print("{:8s} & {:.2f} & {:.2f} & {:18s} & {:7s} & {:18s} & {:7s}".format(os.path.splitext(patient)[0], sigmoid(interpretable_hat[patient]), sigmoid(ef_hat[patient]), tt["EF"], tt["Interpretable"], dd["EF"], dd["Interpretable"]))
+        breakpoint()
+        # print([(patient, interpretable_hat[patient], ef_hat[patient]) for patient in ef_hat if interpretable_hat[patient] > 3 and abs(ef_hat[patient]) < 2])
+        # {patient: (ef_hat[patient], interpretable_hat[patient]) for patient in ef_hat}
+        fig = plt.figure(figsize=(3, 3))
+        plt.scatter(*zip(*[(interpretable_hat[patient], ef_hat[patient]) for patient in ef_hat]), s=1, color="k", edgecolors=None)
+        plt.xlabel('Interpretable (logit)')
+        plt.ylabel('EF (logit)')
+        plt.title("Confidence vs. Interpretability")
+        plt.tight_layout()
+        des = "output/er_analyze/fig"
+        os.makedirs(des, exist_ok=True)
+        plt.savefig(os.path.join(des, "p_vs_interpretable_{}.pdf".format(method)))
 
         fig = plt.figure(figsize=(3, 3))
         fpr, tpr, _ = sklearn.metrics.roc_curve([ef[patient] == "Normal" for patient in sorted(ef_hat) if interpretable[patient] != "No"], [ef_hat[patient] for patient in sorted(ef_hat) if interpretable[patient] != "No"])

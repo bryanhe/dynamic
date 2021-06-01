@@ -55,21 +55,43 @@ def get_videos(user, split):
                         "Moderately Reduced": 1,
                         "Severely Reduced": 0,
                     }
-                    if "EF" in data1 and "EF" in data2:
-                        labels.append((video, score[data1["EF"]], score[data2["EF"]]))
+
+                    interpret = {
+                        "Yes": 2,
+                        "Partial": 1,
+                        "No": 0,
+                    }
+
+                    assert "EF" in data1
+                    assert "EF" in data2
+                    assert "Interpretable" in data1
+                    assert "Interpretable" in data2
+                    labels.append((video, score[data1["EF"]], score[data2["EF"]], interpret[data1["Interpretable"]], interpret[data2["Interpretable"]]))
                 except EOFError:
                     pass
 
             videos = []
-            for (v, l1, l2) in labels:
-                if abs(l1 - l2) == 3:
+            for (v, ef1, ef2, i1, i2) in labels:
+                if abs(ef1 - ef2) == 3:
                     videos.append(v)
-            for (v, l1, l2) in labels:
-                if abs(l1 - l2) == 2:
+            for (v, ef1, ef2, i1, i2) in labels:
+                if abs(ef1 - ef2) == 2:
                     videos.append(v)
-            for (v, l1, l2) in labels:
-                if abs(l1 - l2) == 1 and sorted([l1, l2]) == [1, 2]:
+            for (v, ef1, ef2, i1, i2) in labels:
+                if abs(ef1 - ef2) == 1 and sorted([ef1, ef2]) == [1, 2]:
                     videos.append(v)
+
+            for (v, ef1, ef2, i1, i2) in labels:
+                if abs(i1 - i2) == 2:
+                    videos.append(v)
+
+            filt = []
+            seen = set()
+            for v in videos:
+                if v not in seen:
+                    filt.append(v)
+                    seen.add(v)
+            videos = filt
 
         if not split:
             return videos
