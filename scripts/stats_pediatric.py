@@ -24,10 +24,7 @@ import echonet
 
 @click.command()
 @click.argument("src", type=click.Path(exists=True, file_okay=False))
-@click.argument("dest", type=click.Path(file_okay=False))
 def main(src, dest):
-    echonet.utils.latexify()
-
     BATCHES = ["abnormals-deid", "Second Batch"]
     os.makedirs(dest, exist_ok=True)
 
@@ -87,10 +84,7 @@ def main(src, dest):
                         ef[patient, accession] = ef_bullet
                         sex[patient, accession] = s
                         age[patient, accession] = a
-                        try:
-                            weight[patient, accession] = float(w)
-                        except:
-                            weight[patient, accession] = math.nan
+                        weight[patient, accession] = w
                         height[patient, accession] = h
                     except:
                         print("Invalid EF:",ef_bullet)
@@ -143,67 +137,6 @@ def main(src, dest):
     #     for (p, a) in ef:
     #         for i in instance_of_view[(p, a)]["A4C"]:
     #             f.write("{}-{}-{:06d}.avi,{},{}\n".format(p, a, i, ef[(p, a)], split[p]))
-
-    print("Patients:", len(patients))
-    print("Visits:", len(instance_of_view))
-    print("Visits with A4C:", sum(x["A4C"] != [] for x in instance_of_view.values()))
-    print("Visits with PSAX:", sum(x["PSAX"] != [] for x in instance_of_view.values()))
-    visits = collections.Counter()
-    for (p, a) in ef:
-        visits[p] += 1
-    s = {p: sex[p, a] for (p, a) in sex}
-    print("Sex", collections.Counter(s.values()))
-    for k in age:
-        if age[k][-1] in "D":
-            age[k] = "{:03d}Y".format(int(age[k][:-1]) // 365)
-        if age[k][-1] in "W":
-            age[k] = "{:03d}Y".format(int(age[k][:-1]) // 52)
-        if age[k][-1] in "M":
-            age[k] = "{:03d}Y".format(int(age[k][:-1]) // 12)
-        assert len(age[k]) == 4 and age[k][-1] == "Y"
-        age[k] = int(age[k][:-1])
-    print("Age: ", np.mean(list(age.values())), "+/-", np.std(list(age.values())))
-    print("EF: ", np.mean(list(ef.values())), "+/-", np.std(list(ef.values())))
-
-    os.makedirs(os.path.join(dest, "fig"), exist_ok=True)
-
-    fig = plt.figure(figsize=(1.5, 1.5))
-    plt.hist(visits.values(), bins=range(max(visits.values())))
-    plt.title("# Visits")
-    plt.xlabel("# Visits")
-    plt.ylabel("# Patients")
-    plt.xlim([1, max(visits.values())])
-    plt.tight_layout()
-    plt.savefig(os.path.join(dest, "fig", "visits.pdf"))
-    plt.close(fig)
-
-    fig = plt.figure(figsize=(1.5, 1.5))
-    plt.hist(age.values(), bins=range(max(age.values())))
-    plt.title("Age")
-    plt.xlabel("Age (years)")
-    plt.ylabel("# Visits")
-    plt.xlim([0, max(age.values())])
-    plt.tight_layout()
-    plt.savefig(os.path.join(dest, "fig", "age.pdf"))
-    plt.close(fig)
-
-    fig = plt.figure(figsize=(1.5, 1.5))
-    plt.hist(ef.values(), bins=range(100))
-    plt.title("Ejection Fraction")
-    plt.xlabel("EF (%)")
-    plt.ylabel("# Visits")
-    plt.xlim([0, 100])
-    plt.tight_layout()
-    plt.savefig(os.path.join(dest, "fig", "ef.pdf"))
-    plt.close(fig)
-
-    fig = plt.figure(figsize=(1.5, 1.5))
-    plt.scatter(*zip(*[(age[k], float(weight[k])) for k in age if k in weight]))
-    plt.savefig(os.path.join(dest, "fig", "weight.pdf"))
-    plt.close(fig)
-
-    breakpoint()
-
     
     def get_metadata(filename):
         m = re.search(os.path.join(src, "Second Batch", "dicom", "(CR[0-9a-z]{7})-(CR[0-9a-z]{7}).tgz"), filename)
