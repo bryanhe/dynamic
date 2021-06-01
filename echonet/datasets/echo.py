@@ -1,5 +1,6 @@
 """EchoNet-Dynamic Dataset."""
 
+import math
 import os
 import collections
 import pandas
@@ -118,7 +119,7 @@ class Echo(torchvision.datasets.VisionDataset):
                 raise FileNotFoundError(os.path.join(self.root, "Videos", sorted(missing)[0]))
 
             # Load traces
-            if False:
+            if True:  # TODO: should only load if needed
                 self.frames = collections.defaultdict(list)
                 self.trace = collections.defaultdict(_defaultdict_of_lists)
 
@@ -139,12 +140,15 @@ class Echo(torchvision.datasets.VisionDataset):
                         # TODO: probably could merge
                         for line in f:
                             filename, x, y, frame = line.strip().split(',')
-                            x = float(x)
-                            y = float(y)
-                            frame = int(frame)
-                            if frame not in self.trace[filename]:
-                                self.frames[filename].append(frame)
-                            self.trace[filename][frame].append((x, y))
+                            if frame in ["No Systolic", "No Diastolic"]:
+                                self.frames[filename].append(None)
+                            else:
+                                frame = int(frame)
+                                x = float(x)
+                                y = float(y)
+                                if frame not in self.trace[filename]:
+                                    self.frames[filename].append(frame)
+                                self.trace[filename][frame].append((x, y))
                 for filename in self.frames:
                     for frame in self.frames[filename]:
                         self.trace[filename][frame] = np.array(self.trace[filename][frame])
@@ -233,26 +237,37 @@ class Echo(torchvision.datasets.VisionDataset):
             elif t == "SmallIndex":
                 # Largest (diastolic) frame is first
                 target.append(np.int(self.frames[key][0]))
-            elif t == "LargeFrame":
-                target.append(video[:, self.frames[key][-1], :, :])
-            elif t == "SmallFrame":
-                target.append(video[:, self.frames[key][0], :, :])
+            elif t in ["LargeFrame", "SmallFrame"]:
+                if t == "LargeFrame":
+                    frame = self.frames[key][-1]
+                else:
+                    frame = self.frames[key][0]
+
+                if frame is None:
+                    target.append(np.full((video.shape[0], video.shape[2], video.shape[3]), math.nan, video.dtype))
+                else:
+                    target.append(video[:, frame, :, :])
             elif t in ["LargeTrace", "SmallTrace"]:
                 if t == "LargeTrace":
-                    t = self.trace[key][self.frames[key][-1]]
+                    frame = self.frames[key][-1]
                 else:
-                    t = self.trace[key][self.frames[key][0]]
-                if t.shape[1] == 4:
-                    x1, y1, x2, y2 = t[:, 0], t[:, 1], t[:, 2], t[:, 3]
-                    x = np.concatenate((x1[1:], np.flip(x2[1:])))
-                    y = np.concatenate((y1[1:], np.flip(y2[1:])))
+                    frame = self.frames[key][0]
+                if frame is None:
+                    mask = np.full((video.shape[2], video.shape[3]), math.nan, np.float32)
                 else:
-                    assert t.shape[1] == 2
-                    x, y = t[:, 0], t[:, 1]
+                    t = self.trace[key][frame]
 
-                r, c = skimage.draw.polygon(np.rint(y).astype(np.int), np.rint(x).astype(np.int), (video.shape[2], video.shape[3]))
-                mask = np.zeros((video.shape[2], video.shape[3]), np.float32)
-                mask[r, c] = 1
+                    if t.shape[1] == 4:
+                        x1, y1, x2, y2 = t[:, 0], t[:, 1], t[:, 2], t[:, 3]
+                        x = np.concatenate((x1[1:], np.flip(x2[1:])))
+                        y = np.concatenate((y1[1:], np.flip(y2[1:])))
+                    else:
+                        assert t.shape[1] == 2
+                        x, y = t[:, 0], t[:, 1]
+
+                    r, c = skimage.draw.polygon(np.rint(y).astype(np.int), np.rint(x).astype(np.int), (video.shape[2], video.shape[3]))
+                    mask = np.zeros((video.shape[2], video.shape[3]), np.float32)
+                    mask[r, c] = 1
                 target.append(mask)
             else:
                 if self.split == "CLINICAL_TEST" or self.split == "EXTERNAL_TEST":
