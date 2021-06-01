@@ -103,6 +103,9 @@ rclone copy -P box:"Pediatric Echos" .  # Current location: sherlock:/scratch/us
 scripts/process_pediatric.py /scratch/users/bryanhe/pediatric_echos/ data/pediatric/
 scripts/cross_validate_pediatric.py data/pediatric/
 
+TODO: merge scripts/cross_validate_pediatric.py into scripts/process_pediatric.py
+TODO: device in video and segmentation is messed up
+
 for view in A4C PSAX
 do
     for seed in `seq 0 9`
