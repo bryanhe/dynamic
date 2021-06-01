@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import math
 import hashlib
 import pickle
 import time
@@ -67,6 +68,7 @@ def main(src, dest):
                 key = (patient, accession, instance, f)
                 if key in measurement:
                     if measurement[key] != m:
+                        # TODO: a few frames have a4c and psax traces; just manually filter?
                         measurement[key] = "INVALID"
                         error.add(key)
                 else:
@@ -75,9 +77,9 @@ def main(src, dest):
         ### Read metadata ###
         with open(os.path.join(src, batch, "deid_measurements.csv")) as f:
             header = f.readline().strip().split(",")
-            # assert header == ['anon_patient_id', 'anon_accession_number', 'lv_ef_bullet', 'lv_ef_mod_a4c', 'lv_ef_mod_bp', 'lv_area_d_a4c', 'lv_area_s_a4c', 'lv_area_d_psax_pap', 'lv_area_s_psax_pap', 'lv_vol_d_bullet', 'lv_vol_s_bullet']
+
             # "Second Batch/deid_measurements.csv" actually contains all of the patient info (including the first batch)
-            # Headers are different, so just use the complete header
+            # Headers are different for "abnormals-deid and "Second Batch", so use header to identify
             if header == ['anon_patient_id', 'anon_accession_number', 'patient_sex', 'patient_age', 'patient_weight_kg', 'patient_height_cm', 'lv_ef_bullet', 'lv_ef_mod_a4c', 'lv_ef_mod_bp', 'lv_area_d_a4c', 'lv_area_s_a4c', 'lv_area_d_psax_pap', 'lv_area_s_psax_pap', 'lv_vol_d_bullet', 'lv_vol_s_bullet']:
 
                 for line in f:
@@ -91,9 +93,13 @@ def main(src, dest):
                             weight[patient, accession] = float(w)
                         except:
                             weight[patient, accession] = math.nan
-                        height[patient, accession] = h
-                    except:
-                        print("Invalid EF:",ef_bullet)
+                        try:
+                            height[patient, accession] = float(h)
+                        except:
+                            height[patient, accession] = math.nan
+                    except Exception as e:
+                        print(type(e), e)
+                        print("Invalid EF:", ef_bullet)
 
     ### Order points in trace ###
     for key in coordinates:
@@ -122,8 +128,8 @@ def main(src, dest):
         if a4c and psax:
             raise ValueError("Both views")
         elif not a4c and not psax:
-            # TODO: these are probably the ones in errors (figure out what's wrong)
-            print(p, a, i, f, " has no view")
+            # TODO: these are probably the ones in error (figure out what's wrong)
+            print(p, a, i, f, " has no view", (p, a, i, f) in error)
         else:
             if a4c:
                 view[(p, a, i)] = "A4C"
@@ -134,16 +140,9 @@ def main(src, dest):
         instance_of_view[(p, a)][view[(p, a, i)]].append(i)
 
     patients = sorted(set(p for (p, a) in ef))
-    # index = {p: i for (i, p) in enumerate(patients)}
     split = {p: int(hashlib.sha1(p.encode("utf-8")).hexdigest(), 16) % 10 for p in patients}
-    # for p in index:
-    #     split[p] = (index[p] % 10)
-    # with open(os.path.join(dest, "FileList.csv"), "w") as f:
-    #     f.write("FileName,EF,Split\n")
-    #     for (p, a) in ef:
-    #         for i in instance_of_view[(p, a)]["A4C"]:
-    #             f.write("{}-{}-{:06d}.avi,{},{}\n".format(p, a, i, ef[(p, a)], split[p]))
 
+    ### Basic dataset statistics and plots ###
     print("Patients:", len(patients))
     print("Visits:", len(instance_of_view))
     print("Visits with A4C:", sum(x["A4C"] != [] for x in instance_of_view.values()))
@@ -202,56 +201,12 @@ def main(src, dest):
     plt.savefig(os.path.join(dest, "fig", "weight.pdf"))
     plt.close(fig)
 
-    breakpoint()
-
-    
-    def get_metadata(filename):
-        m = re.search(os.path.join(src, "Second Batch", "dicom", "(CR[0-9a-z]{7})-(CR[0-9a-z]{7}).tgz"), filename)
-        # m = re.search(os.path.join(src, "({})".format("|".join(BATCHES)), "dicom", "(CR[0-9a-z]{7})-(CR[0-9a-z]{7}).tgz"), filename)
-        assert m is not None
-        
-        meta = collections.defaultdict(dict)
-        patient, accession = m.groups()
-        
-        if (patient, accession) in metadata:
-            return {}
-        else:
-            with tarfile.open(filename) as tf:
-                for dicom in tf.getmembers():
-                    if dicom.isfile():
-                        InstanceNumber, SOPInstanceUID = os.path.basename(dicom.name).split("-")
-                        assert len(InstanceNumber) == 6
-            
-                        with tf.extractfile(dicom.name) as f:
-                            ds = pydicom.dcmread(f)
-            
-                        fps = None
-                        try:
-                            fps = ds.CineRate  # TODO CineRate frequently missing
-                        except:
-                            pass
-            
-                        regions = ds.SequenceOfUltrasoundRegions
-                        if len(regions) != 1:
-                            print("Found {} regions; expected 1.".format(len(regions)))
-                        x0 = regions[0].RegionLocationMinX0
-                        y0 = regions[0].RegionLocationMinY0
-                        x1 = regions[0].RegionLocationMaxX1
-                        y1 = regions[0].RegionLocationMaxY1
-
-                        # TODO: check for duplicates
-                        # if (patient, accession, InstanceNumber) in meta:
-                        #     print(filename, "has multiple copies", flush=True)
-                        # assert (patient, accession, InstanceNumber) not in meta
-                        meta[patient, accession][InstanceNumber] = {"fps": fps, "region": (x0, y0, x1, y1)}
-            return meta
-
     def save_videos(filename):
         # print(filename, flush=True)
         if filename in [
-            "/scratch/users/bryanhe/pediatric_echos/Second Batch/dicom/CR3dcb539-CR3dcb7b7.tgz",
-            "/scratch/users/bryanhe/pediatric_echos/Second Batch/dicom/CR3dcb53a-CR3dcb745.tgz",
-            "/scratch/users/bryanhe/pediatric_echos/Second Batch/dicom/CR3dcb53b-CR3dcb748.tgz"
+            os.path.join(src, "Second Batch", "dicom", "CR3dcb539-CR3dcb7b7.tgz"),  # Causes code to give "Aborted!"
+            os.path.join(src, "Second Batch", "dicom", "CR3dcb53a-CR3dcb745.tgz"),  # Abort
+            os.path.join(src, "Second Batch", "dicom", "CR3dcb53b-CR3dcb748.tgz"),  # Abort
         ]:
             return {}
         m = re.search(os.path.join(src, "Second Batch", "dicom", "(CR[0-9a-z]{7})-(CR[0-9a-z]{7}).tgz"), filename)
@@ -351,6 +306,13 @@ def main(src, dest):
                                 meta[patient, accession][InstanceNumber] = {"fps": fps, "region": (x0, y0, x1, y1)}
                                 # coord[patient, accession, InstanceNumber].append((f, c[f]))
                             except Exception as e:
+                                # TODO: exceptions are
+                                # 1) <class 'ValueError'> axes don't match array
+                                # 2) <class 'IndexError'> index 53 is out of bounds for axis 1 with size 53
+                                #
+                                # 1 is probably unfixable
+                                # 2 can have different index, but is (almost?) always one off of the end; can probably just use last frame
+
                                 print(filename, dicom.name)
                                 print(type(e), e, flush=True)
                                 print("", flush=True)
@@ -365,39 +327,35 @@ def main(src, dest):
     except:
         metadata = {}
 
-    # with tqdm.tqdm(total=len(files), desc="Reading metadata from DICOMs") as pbar:
-    #     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
-    #         for m in executor.map(get_metadata, files):
-    #         # for m in map(get_metadata, files):
-    #             # TODO: check keys of c not already in metadata
-    #             metadata.update(m)
-
-    #             if len(metadata) % 100 == 0:
-    #                 with open(metadata_filename, "wb") as f:
-    #                     pickle.dump(metadata, f)
-
-    #             pbar.update()
-
-
-    # with open(metadata_filename, "wb") as f:
-    #     pickle.dump(meta, f)
-
     with tqdm.tqdm(total=len(files), desc="Saving videos") as pbar:
         with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
-            for m in executor.map(save_videos, files):
-            # for m in map(save_videos, files):
+            # for m in executor.map(save_videos, files):
+            for m in map(save_videos, files):
                 # TODO: check keys of c not already in coord
                 metadata.update(m)
 
-                if len(metadata) % 100 == 0:
+                if len(metadata) % 100 == 0 or len(metadata) == len(files):
                     with open(metadata_filename, "wb") as f:
                         pickle.dump(metadata, f)
 
                 pbar.update()
-
-    with open(metadata_filename, "wb") as f:
-        pickle.dump(metadata, f)
     
+    # TODO: transform coords
+    for (p, a, i) in coordinates:
+        if (p, a) in metadata and "{:06d}".format(i) in metadata[p, a]:
+            (x0, y0, x1, y1) = metadata[p, a]["{:06d}".format(i)]["region"]
+            for f in coordinates[p, a, i]:
+                c = coordinates[p, a, i][f]
+
+                h = y1 - y0 + 1
+                w = x1 - x0 + 1
+
+                c -= np.array([x0 + ((w - h) // 2), y0])
+                c = c * 112 / h
+                c = c.astype(np.int64)
+
+                coordinates[p, a, i][f] = c
+
     for view in ["A4C", "PSAX"]:
         os.makedirs(os.path.join(dest, view), exist_ok=True)
         try:
@@ -407,19 +365,40 @@ def main(src, dest):
 
         with open(os.path.join(dest, view, "FileList.csv"), "w") as f:
             f.write("FileName,EF,Sex,Age,Weight,Height,Split\n")
-            for (p, a) in ef:
-                for i in instance_of_view[(p, a)][view]:
+            for (p, a) in ef:  # TODO: sort?
+                for i in instance_of_view[(p, a)][view]:  # TODO: sort?
                     if (p, a) in metadata and "{:06d}".format(i) in metadata[p, a]:
                         f.write("{}-{}-{:06d}.avi,{},{},{},{},{},{}\n".format(p, a, i, ef[p, a], sex[p, a], age[p, a], weight[p, a], height[p, a], split[p]))
 
-        # with open(os.path.join(dest, view, "VolumeTracings.csv"), "w") as f:
-        #     f.write("FileName,X,Y,Frame\n")
-        #     for (p, a) in ef:
-        #         for i in instance_of_view[(p, a)][view]:
-        #             if (p, a, "{:06d}".format(i)) in coord:
-        #                 for (frame, c) in coord[p, a, "{:06d}".format(i)]:
-        #                     for (x, y) in c:
-        #                         f.write("{}-{}-{:06d}.avi,{},{},{}\n".format(p, a, i, x, y, frame))
+        # TODO: I think this can be symlinked?
+        with open(os.path.join(dest, view, "VolumeTracings.csv"), "w") as f:
+            # TODO: pad for systolic/distolic (whatever missing)
+            f.write("FileName,X,Y,Frame\n")
+            for (p, a) in ef:  # TODO: sort?
+                for i in instance_of_view[(p, a)][view]:  # TODO: sort?
+                    if (p, a) in metadata and "{:06d}".format(i) in metadata[p, a]:
+                        if (p, a, i) in coordinates:
+                            systolic = []
+                            diastolic = []
+                            for frame in coordinates[p, a, i]:
+                                if measurement[p, a, i, frame] in ["LV_area_s_A4C_calc", "LV_area_s_psax_pap_calc"]:
+                                    systolic.append(frame)
+                                elif measurement[p, a, i, frame] in ["LV_area_d_A4C_calc", "LV_area_d_PSAX_pap_calc"]:
+                                    diastolic.append(frame)
+                                else:
+                                    assert measurement[p, a, i, frame] == "INVALID"
+
+                            print(systolic, diastolic)
+                            for (label, frames) in [
+                                ("Systolic", systolic),
+                                ("Diastolic", diastolic),
+                            ]:
+                                if frames != []:
+                                    frame = frames[0]
+                                    for (x, y) in coordinates[p, a, i][frame]:
+                                        f.write("{}-{}-{:06d}.avi,{},{},{}\n".format(p, a, i, x, y, frame))
+                                else:
+                                        f.write("{}-{}-{:06d}.avi,,,No {}\n".format(p, a, i, label))
 
 
 
