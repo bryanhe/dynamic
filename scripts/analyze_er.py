@@ -33,6 +33,7 @@ def bootstrap(ef, pred, n=1000):
 
 
 def main(src="output/er/ef"):
+# def main(src="output/er_full_data_include_low_interpretable/ef"):
     ef = collections.defaultdict(dict)
     interpretable = collections.defaultdict(dict)
     # with open("data/er/split_0/FileList.csv") as f:
@@ -74,22 +75,22 @@ def main(src="output/er/ef"):
         des = "output/er_analyze/fig"
         os.makedirs(des, exist_ok=True)
         plt.savefig(os.path.join(des, "interpretability_{}.pdf".format(method)))
-        breakpoint()
 
         pred = {patient: np.array(pred[patient]) for patient in pred}  # TODO: meaning in logit space is a bit weird
 
-        FILTER_MIXED_INTERPRETABILITY = True
+        FILTER_MIXED_INTERPRETABILITY = False
         if FILTER_MIXED_INTERPRETABILITY:
             print(len(pred))
             pred = {patient: pred[patient] for patient in pred if pred[patient][:, 1].min() < 0.0 and pred[patient][:, 1].max() > 2.0}
             print(len(pred))
-            breakpoint()
+            # breakpoint()
             print(pred.keys())
-        ef_hat = {patient: (pred[patient][:, 0] * 1 / (1 + np.exp(-pred[patient][:, 1]))).sum() / (1 / (1 + np.exp(-pred[patient][:, 1]))).sum() for patient in pred}
+        # ef_hat = {patient: (pred[patient][:, 0] * 1 / (1 + np.exp(-pred[patient][:, 1]))).sum() / (1 / (1 + np.exp(-pred[patient][:, 1]))).sum() for patient in pred}
         pred = {patient: pred[patient].mean(0) for patient in pred}  # TODO: meaning in logit space is a bit weird
         ef_hat = {patient: pred[patient][0] for patient in pred}
         interpretable_hat = {patient: pred[patient][1] for patient in pred}
 
+        # breakpoint()
         print("EF")
         for (score, (p, l, h)) in zip(["AUC", "CE"], bootstrap({patient: 1 if ef[patient] == "Normal" else 0 for patient in ef if interpretable[patient] != "No"}, {patient: ef_hat[patient] for patient in ef_hat if interpretable[patient] != "No"})):
             print("{}: {:.2f} ({:.2f} - {:.2f})".format(score, p, l, h))
@@ -99,6 +100,7 @@ def main(src="output/er/ef"):
         inter = sorted(interpretable_hat.values())
         thresh = [inter[i * len(inter) // bins] for i in range(bins)] + [math.inf]
 
+        # breakpoint()
         for bin in range(bins):
             print("Bin #{}".format(bin + 1))
             print({patient for patient in ef if interpretable[patient] != "No" and patient in interpretable_hat and thresh[bin] <= interpretable_hat[patient] < thresh[bin + 1]})
@@ -119,7 +121,7 @@ def main(src="output/er/ef"):
 
             if interpretable_hat[patient] > 3 and abs(ef_hat[patient]) < 2:
                 print("{:8s} & {:.2f} & {:.2f} & {:18s} & {:7s} & {:18s} & {:7s}".format(os.path.splitext(patient)[0], sigmoid(interpretable_hat[patient]), sigmoid(ef_hat[patient]), tt["EF"], tt["Interpretable"], dd["EF"], dd["Interpretable"]))
-        breakpoint()
+        # breakpoint()
         # print([(patient, interpretable_hat[patient], ef_hat[patient]) for patient in ef_hat if interpretable_hat[patient] > 3 and abs(ef_hat[patient]) < 2])
         # {patient: (ef_hat[patient], interpretable_hat[patient]) for patient in ef_hat}
         fig = plt.figure(figsize=(3, 3))

@@ -120,6 +120,7 @@ def run(
     # Set device for computations
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(device)
 
     # Set up model
     model = torchvision.models.video.__dict__[model_name](pretrained=pretrained)
@@ -137,6 +138,11 @@ def run(
     model.module.fc = torch.nn.Linear(model.module.fc.in_features, 2).to(device)
     model.module.fc.weight.data[0, :] = weight
     model.module.fc.bias.data[0] = bias
+    # weight = model.fc.weight.data
+    # bias = model.fc.bias.data
+    # model.fc = torch.nn.Linear(model.fc.in_features, 2).to(device)
+    # model.fc.weight.data[0, :] = weight
+    # model.fc.bias.data[0] = bias
 
     # Set up optimizer
     if full:
@@ -214,7 +220,8 @@ def run(
                     epoch,
                     phase,
                     *loss,
-                    *[sklearn.metrics.roc_auc_score(y[y[:, i] != 0.5, i], yhat[y[:, i] != 0.5, i]) for i in range(y.shape[1])],
+                    # *[sklearn.metrics.roc_auc_score(y[y[:, i] != 0.5, i], yhat[y[:, i] != 0.5, i]) for i in range(y.shape[1])],
+                    *[sklearn.metrics.roc_auc_score(y[:, i], yhat[:, i]) for i in range(y.shape[1])],
                 ))
                 f.flush()
             scheduler.step()
@@ -256,7 +263,8 @@ def run(
                 f.write("{} (one clip) MAE:  {:.2f} ({:.2f} - {:.2f})\n".format(split, *echonet.utils.bootstrap(y, yhat, sklearn.metrics.mean_absolute_error)))
                 f.write("{} (one clip) RMSE: {:.2f} ({:.2f} - {:.2f})\n".format(split, *tuple(map(math.sqrt, echonet.utils.bootstrap(y, yhat, sklearn.metrics.mean_squared_error)))))
                 for i in range(y.shape[1]):
-                    f.write("{} (one clip) AUC:  {:.2f} ({:.2f} - {:.2f})\n".format(split, *echonet.utils.bootstrap(y[y[:, i] != 0.5, i], yhat[y[:, i] != 0.5, i], sklearn.metrics.roc_auc_score)))
+                    # f.write("{} (one clip) AUC:  {:.2f} ({:.2f} - {:.2f})\n".format(split, *echonet.utils.bootstrap(y[y[:, i] != 0.5, i], yhat[y[:, i] != 0.5, i], sklearn.metrics.roc_auc_score)))
+                    f.write("{} (one clip) AUC:  {:.2f} ({:.2f} - {:.2f})\n".format(split, *echonet.utils.bootstrap(y[:, i], yhat[:, i], sklearn.metrics.roc_auc_score)))
                 f.flush()
 
                 # Performance with test-time augmentation
@@ -346,9 +354,9 @@ def run_epoch(model, dataloader, train, optim, device, save_all=False, block_siz
             for (X, outcome) in dataloader:
 
                 outcome = torch.vstack(outcome).transpose(0, 1)
-                outcome[outcome[:, 1] == 0, 0] = 0.5  # TODO: why does math.nan break this
+                # outcome[outcome[:, 1] == 0, 0] = 0.5  # TODO: why does math.nan break this
 
-                n += outcome.nansum(0).numpy()
+                n += outcome.sum(0).numpy()
                 d += (~torch.isnan(outcome)).sum(0).numpy()
 
                 y.append(outcome.numpy())
@@ -376,12 +384,18 @@ def run_epoch(model, dataloader, train, optim, device, save_all=False, block_siz
                     yhat.append(outputs.view(-1, n_targets).to("cpu").detach().numpy())
 
                 loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, outcome, reduction="none")
-                loss[torch.isnan(outcome)] = 0
+                # outcome[outcome[:, 1] == 0, 0] = math.nan  # TODO TODO TODO
+                # loss[torch.isnan(outcome)] = 0  # TODO TODO TODO
+                # loss[outcome[:, 1] == 0, 0] = 0  # TODO TODO TODO
 
                 if train:
                     optim.zero_grad()
-                    loss[~torch.isnan(outcome)].sum().backward()
+                    loss.sum().backward()
+                    # loss[~torch.isnan(outcome)].sum().backward()
                     optim.step()
+
+                # outcome[outcome[:, 1] == 0, 0] = math.nan  # TODO: why does math.nan break this
+
 
                 total += loss.sum(0).detach().cpu().numpy()
 
