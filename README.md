@@ -130,21 +130,27 @@ done
 
 
 
+  rclone copy -P box:"ALL Exam Folders" .
+
   cd data/er_raw_data/
   rclone copy -P box:"First Batch Apical 4 Chamber" "First Batch Apical 4 Chamber"
   rclone copy -P box:"Apical 4 Chamber Views - Second" "Apical 4 Chamber Views - Second"
   rclone copy -P box:"Apical 4 Chamber Views - Third" "Apical 4 Chamber Views - Third"
   rclone copy -P box:"Apical 4 Chamber Views - Fourth" "Apical 4 Chamber Views - Fourth"
 
+  cd data/ER_Exams/
+  rclone copy -P box:"ALL Exam Folders" .
+
   scripts/process_er.py data/er_raw_data/ data/er_processed/
 
   scripts/server/server.py data/er_processed/ data/labels
   scripts/prepare_er.py data/labels/ data/er_processed/ data/er/
+  scripts/figs_er.py data/er_processed/ output/figs_er/
 
 for seed in `seq 0 9`
 do
         echonet video --data_dir data/er/split_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 0 --output output/er/ef/blind_${seed}/ --run_test
-        echonet video --data_dir data/er/split_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr 1e-4 --output output/er/ef/lr_1e-4_${seed}/ --run_test
+# echonet video --data_dir data/er/split_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr 1e-4 --output output/er/ef/lr_1e-4_${seed}/ --run_test
         # echonet video --data_dir data/er/split_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-4 --output output/er/ef/lr_1e-4_${seed}/ --run_test
         # echonet video --data_dir data/er/split_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 15 --lr 1e-5 --output output/er/ef/lr_1e-5_${seed}/ --run_test
         # echonet video --data_dir data/er/split_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 1000 --lr 1e-6 --output output/er/ef/lr_1e-6_${seed}/ --run_test
