@@ -222,9 +222,9 @@ def run(
                 large_dice = 2 * large_inter / (large_union + large_inter)
                 small_dice = 2 * small_inter / (small_union + small_inter)
                 with open(os.path.join(output, "{}_dice.csv".format(split)), "w") as g:
-                    g.write("Filename, Overall, Large, Small\n")
-                    for (filename, overall, large, small) in zip(dataset.fnames, overall_dice, large_dice, small_dice):
-                        g.write("{},{},{},{}\n".format(filename, overall, large, small))
+                    g.write("Filename,Overall DSC,Large DSC,Small DSC,Large Intersection,Large Union,Small Intersection,Small Union\n")
+                    for (filename, overall, large, small, li, lu, si, su) in zip(dataset.fnames, overall_dice, large_dice, small_dice, large_inter, large_union, small_inter, small_union):
+                        g.write("{},{},{},{},{},{},{},{}\n".format(filename, overall, large, small, li, lu, si, su))
 
                 f.write("{} dice (overall): {:.4f} ({:.4f} - {:.4f})\n".format(split, *echonet.utils.bootstrap(np.concatenate((large_inter, small_inter)), np.concatenate((large_union, small_union)), echonet.utils.dice_similarity_coefficient)))
                 f.write("{} dice (large):   {:.4f} ({:.4f} - {:.4f})\n".format(split, *echonet.utils.bootstrap(large_inter, large_union, echonet.utils.dice_similarity_coefficient)))
@@ -391,6 +391,21 @@ def run_epoch(model, dataloader, train, optim, device):
     with torch.set_grad_enabled(train):
         with tqdm.tqdm(total=len(dataloader)) as pbar:
             for (_, (large_frame, small_frame, large_trace, small_trace)) in dataloader:
+
+                # Mask out nans (missing trace)
+                large_mask = ~torch.isnan(large_trace).any(2).any(1)
+                small_mask = ~torch.isnan(small_trace).any(2).any(1)
+
+                large_frame = large_frame[large_mask, :, :]
+                large_trace = large_trace[large_mask, :, :]
+                small_frame = small_frame[small_mask, :, :]
+                small_trace = small_trace[small_mask, :, :]
+
+                assert not torch.isnan(large_frame).any()
+                assert not torch.isnan(large_trace).any()
+                assert not torch.isnan(small_frame).any()
+                assert not torch.isnan(small_trace).any()
+
                 # Count number of pixels in/out of human segmentation
                 pos += (large_trace == 1).sum().item()
                 pos += (small_trace == 1).sum().item()
@@ -411,8 +426,17 @@ def run_epoch(model, dataloader, train, optim, device):
                 # Compute pixel intersection and union between human and computer segmentations
                 large_inter += np.logical_and(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum()
                 large_union += np.logical_or(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum()
-                large_inter_list.extend(np.logical_and(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum((1, 2)))
-                large_union_list.extend(np.logical_or(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum((1, 2)))
+                # large_inter_list.extend(np.logical_and(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum((1, 2)))
+                # large_union_list.extend(np.logical_or(y_large[:, 0, :, :].detach().cpu().numpy() > 0., large_trace[:, :, :].detach().cpu().numpy() > 0.).sum((1, 2)))
+                index = 0
+                for m in large_mask:
+                    if m:
+                        large_inter_list.append(np.logical_and(y_large[index, 0, :, :].detach().cpu().numpy() > 0., large_trace[index, :, :].detach().cpu().numpy() > 0.).sum())
+                        large_union_list.append(np.logical_or(y_large[index, 0, :, :].detach().cpu().numpy() > 0., large_trace[index, :, :].detach().cpu().numpy() > 0.).sum())
+                        index += 1
+                    else:
+                        large_inter_list.append(math.nan)
+                        large_union_list.append(math.nan)
 
                 # Run prediction for systolic frames and compute loss
                 small_frame = small_frame.to(device)
@@ -422,8 +446,17 @@ def run_epoch(model, dataloader, train, optim, device):
                 # Compute pixel intersection and union between human and computer segmentations
                 small_inter += np.logical_and(y_small[:, 0, :, :].detach().cpu().numpy() > 0., small_trace[:, :, :].detach().cpu().numpy() > 0.).sum()
                 small_union += np.logical_or(y_small[:, 0, :, :].detach().cpu().numpy() > 0., small_trace[:, :, :].detach().cpu().numpy() > 0.).sum()
-                small_inter_list.extend(np.logical_and(y_small[:, 0, :, :].detach().cpu().numpy() > 0., small_trace[:, :, :].detach().cpu().numpy() > 0.).sum((1, 2)))
-                small_union_list.extend(np.logical_or(y_small[:, 0, :, :].detach().cpu().numpy() > 0., small_trace[:, :, :].detach().cpu().numpy() > 0.).sum((1, 2)))
+                # small_inter_list.extend(np.logical_and(y_small[:, 0, :, :].detach().cpu().numpy() > 0., small_trace[:, :, :].detach().cpu().numpy() > 0.).sum((1, 2)))
+                # small_union_list.extend(np.logical_or(y_small[:, 0, :, :].detach().cpu().numpy() > 0., small_trace[:, :, :].detach().cpu().numpy() > 0.).sum((1, 2)))
+                index = 0
+                for m in small_mask:
+                    if m:
+                        small_inter_list.append(np.logical_and(y_small[index, 0, :, :].detach().cpu().numpy() > 0., small_trace[index, :, :].detach().cpu().numpy() > 0.).sum())
+                        small_union_list.append(np.logical_or(y_small[index, 0, :, :].detach().cpu().numpy() > 0., small_trace[index, :, :].detach().cpu().numpy() > 0.).sum())
+                        index += 1
+                    else:
+                        small_inter_list.append(math.nan)
+                        small_union_list.append(math.nan)
 
                 # Take gradient step if training
                 loss = (loss_large + loss_small) / 2

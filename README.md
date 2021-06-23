@@ -104,6 +104,9 @@ scripts/process_pediatric.py /scratch/users/bryanhe/pediatric_echos/ data/pediat
 scripts/cross_validate_pediatric.py data/pediatric/
 scripts/process_phn.py /oak/stanford/groups/jamesz/pediatric_heart_network/ data/phn/
 
+TODO: merge scripts/cross_validate_pediatric.py into scripts/process_pediatric.py
+TODO: device in video and segmentation is messed up
+
 for view in A4C PSAX
 do
     for seed in `seq 0 9`
@@ -128,10 +131,10 @@ do
         # echonet video --data_dir data/pediatric/${view}_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 30 --lr_step_period 1000 --lr 1e-6 --output output/pediatric/ef/${view}_${seed}_lr_1e-6/ --run_test
         shbatch --partition=jamesz,owners,normal --time=06:00:00 --gpus=2 --cpus-per-task=10 -- "conda activate echonet; echonet video --data_dir data/pediatric/${view}_${seed}/ --weights r2plus1d_18_32_2_pretrained.pt --num_epochs 45 --lr 1e-4 --last --output output/pediatric/ef/${view}_${seed}_transfer/ --run_test"
     
-        # echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --weights deeplabv3_resnet50_random.pt --num_epochs 0 --output output/pediatric/segmentation/${view}_${seed}_blind/
-        # echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --num_epochs 50 --output output/pediatric/segmentation/${view}_${seed}_scratch/
-        # echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-5 --output output/pediatric/segmentation/${view}_${seed}_lr_1e-5/
-        # echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --output output/pediatric/segmentation/${view}_${seed}_lr_1e-6/
-        # echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --last --output output/pediatric/segmentation/${view}_${seed}_transfer/
+        echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --weights deeplabv3_resnet50_random.pt --num_epochs 0 --output output/pediatric/segmentation/${view}_${seed}_blind/ --run_test
+        echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --num_epochs 50 --output output/pediatric/segmentation/${view}_${seed}_scratch/ --run_test
+        echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-5 --output output/pediatric/segmentation/${view}_${seed}_lr_1e-5/ --run_test
+        # echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --output output/pediatric/segmentation/${view}_${seed}_lr_1e-6/ --run_test
+        echonet segmentation --data_dir data/pediatric/${view}_${seed}/ --weights deeplabv3_resnet50_random.pt --num_epochs 20 --lr 1e-6 --last --output output/pediatric/segmentation/${view}_${seed}_transfer/ --run_test
     done
 done
