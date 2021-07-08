@@ -27,7 +27,7 @@ import echonet
 @click.command()
 @click.argument("src", type=click.Path(exists=True, file_okay=False))
 @click.argument("dest", type=click.Path(file_okay=False))
-@click.option("--patients", multiple=True, default=None)
+@click.option("--patients", multiple=True)
 def main(src, dest, patients):
     try:
         root = {}
@@ -95,60 +95,69 @@ def main(src, dest, patients):
     logo = PIL.Image.open(os.path.join(os.path.dirname(__file__), "phillips.png"))
     logo = np.array(logo)
 
-    if patients is None:
+    if patients == ():
         patients = sorted(root.keys())
     print(patients)
     for p in tqdm.tqdm(patients):
         os.makedirs(os.path.join(dest, p), exist_ok=True)
-        with open(os.path.join(dest, p, "videos.tsv"), "w") as f:
-            for filename in tqdm.tqdm(sorted(os.listdir(os.path.join(src, root[p]))), leave=False):
-                if os.path.isfile(os.path.join(dest, p, "full", filename[3:] + ".avi")) or \
-                   os.path.isfile(os.path.join(dest, p, "color", filename[3:] + ".avi")):
-                   # skip if done
-                    continue
 
-                ds = pydicom.dcmread(os.path.join(src, root[p], filename), force=True)
+        def save_file(filename):
+            if os.path.isfile(os.path.join(dest, p, "full", filename[3:] + ".webm")) or \
+               os.path.isfile(os.path.join(dest, p, "color", filename[3:] + ".webm")):
+               # skip if done
+               return
 
-                try:
-                    video = ds.pixel_array
-                except AttributeError:
-                    continue
-                if len(video.shape) in (2, 3):
-                    continue
+            ds = pydicom.dcmread(os.path.join(src, root[p], filename), force=True)
 
-                res = skimage.feature.match_template(video[0, :, :, :], logo)
-                i, j, _ = np.unravel_index(np.argmax(res), res.shape)
+            try:
+                video = ds.pixel_array
+            except AttributeError:
+                return
+            if len(video.shape) in (2, 3):
+                return
 
-                assert len(ds.SequenceOfUltrasoundRegions) == 1
-                region = ds.SequenceOfUltrasoundRegions[0]
-                x0 = region.RegionLocationMinX0
-                y0 = region.RegionLocationMinY0
-                x1 = region.RegionLocationMaxX1
-                y1 = region.RegionLocationMaxY1
+            res = skimage.feature.match_template(video[0, :, :, :], logo)
+            i, j, _ = np.unravel_index(np.argmax(res), res.shape)
 
-                video = pydicom.pixel_data_handlers.util.convert_color_space(video, ds.PhotometricInterpretation, "RGB")
-                video = video.transpose((3, 0, 1, 2))
+            if len(ds.SequenceOfUltrasoundRegions) != 1:
+                print("Found {} regions; expected 1.".format(len(ds.SequenceOfUltrasoundRegions)))
+                # breakpoint()
+            # assert len(ds.SequenceOfUltrasoundRegions) == 1
+            region = ds.SequenceOfUltrasoundRegions[0]
+            x0 = region.RegionLocationMinX0
+            y0 = region.RegionLocationMinY0
+            x1 = region.RegionLocationMaxX1
+            y1 = region.RegionLocationMaxY1
 
-                small = video[:, :, y0:(y1 + 1), x0:(x1 + 1)]
-                _, _, h, w = small.shape
-                small = small[:, :, :, ((w - h) // 2):(h + (w - h) // 2)]
-                small = np.array(list(map(lambda x: cv2.resize(x, (112, 112), interpolation=cv2.INTER_AREA), small.transpose((1, 2, 3, 0))))).transpose((3, 0, 1, 2))
+            video = pydicom.pixel_data_handlers.util.convert_color_space(video, ds.PhotometricInterpretation, "RGB")
+            video = video.transpose((3, 0, 1, 2))
 
-                if i > 250:
-                    # Upside-down
-                    video = video[:, :, ::-1, :]
-                    small = small[:, :, ::-1, :]
+            small = video[:, :, y0:(y1 + 1), x0:(x1 + 1)]
+            _, _, h, w = small.shape
+            small = small[:, :, :, ((w - h) // 2):(h + (w - h) // 2)]
+            small = np.array(list(map(lambda x: cv2.resize(x, (112, 112), interpolation=cv2.INTER_AREA), small.transpose((1, 2, 3, 0))))).transpose((3, 0, 1, 2))
 
-                fps = 1000 / float(ds.FrameTime)
+            if i > 250:
+                # Upside-down
+                video = video[:, :, ::-1, :]
+                small = small[:, :, ::-1, :]
 
-                assert filename[:3] == "IMG"
-                if ds.UltrasoundColorDataPresent == 0:
-                    echonet.utils.savevideo(os.path.join(dest, p, filename[3:] + ".avi"), small, fps)
-                    os.makedirs(os.path.join(dest, p, "full"), exist_ok=True)
-                    echonet.utils.savevideo(os.path.join(dest, p, "full", filename[3:] + ".avi"), video, fps)
-                else:
-                    os.makedirs(os.path.join(dest, p, "color"), exist_ok=True)
-                    echonet.utils.savevideo(os.path.join(dest, p, "color", filename[3:] + ".avi"), video, fps)
+            fps = 1000 / float(ds.FrameTime)
+
+            assert filename[:3] == "IMG"
+            if ds.UltrasoundColorDataPresent == 0:
+                echonet.utils.savevideo(os.path.join(dest, p, filename[3:] + ".webm"), small, fps)
+                os.makedirs(os.path.join(dest, p, "full"), exist_ok=True)
+                echonet.utils.savevideo(os.path.join(dest, p, "full", filename[3:] + ".webm"), video, fps)
+            else:
+                os.makedirs(os.path.join(dest, p, "color"), exist_ok=True)
+                echonet.utils.savevideo(os.path.join(dest, p, "color", filename[3:] + ".webm"), video, fps)
+
+        filenames = sorted(os.listdir(os.path.join(src, root[p])))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            # for filename in tqdm.tqdm(executor.map(save_file, filenames), total=len(filenames), leave=False):
+            for filename in tqdm.tqdm(map(save_file, filenames), total=len(filenames), leave=False):
+                pass
 
         with open(os.path.join(dest, p, "complete"), "w") as f:
             # write file to mark complete
