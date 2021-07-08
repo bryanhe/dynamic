@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import skimage.feature
 import hashlib
 import pickle
 import time
@@ -18,6 +19,7 @@ import skimage.segmentation
 import zipfile
 import tarfile
 import concurrent.futures
+import collections
 
 import echonet
 
@@ -25,11 +27,134 @@ import echonet
 @click.command()
 @click.argument("src", type=click.Path(exists=True, file_okay=False))
 @click.argument("dest", type=click.Path(file_okay=False))
-def main(src, dest):
-    for batch in os.listdir(src):
-        for patient in os.listdir(os.path.join(src, batch)):
-            print(batch, patient)
-    print(os.listdir(src))
+@click.option("--patients", multiple=True, default=None)
+def main(src, dest, patients):
+    try:
+        root = {}
+        with open(os.path.join(dest, "root.tsv"), "r") as f:
+            for line in f:
+                p, path = line.strip().split("\t")
+                root[p] = path
+    except FileNotFoundError:
+        root = {}
+        for batch in os.listdir(src):
+            if batch in ["$RECYCLE.BIN", "System Volume Information"]:
+                continue
+
+            for patient in os.listdir(os.path.join(src, batch)):
+                if not os.path.isdir(os.path.join(src, batch, patient)) or patient == "Viewer":
+                    continue
+
+                # print(batch, patient)
+                p = patient.split("_")[0]
+                assert patient == "{}_000_{}_".format(p, p) or patient == "{}_{}_".format(p, p)
+                if p in root:
+                    # Patient appears multiple times
+                    # (probably across batches, but potentially just with missing _000)
+                    print(*root[p])
+                    print(batch, patient)
+
+                    prev = collections.defaultdict(int)
+                    for filename in os.listdir(os.path.join(src, *root[p])):
+                        prev[filename] = os.path.getsize(os.path.join(src, *root[p], filename))
+
+                    curr = collections.defaultdict(int)
+                    for filename in os.listdir(os.path.join(src, batch, patient)):
+                        curr[filename] = os.path.getsize(os.path.join(src, batch, patient, filename))
+
+                    filenames = set().union(prev.keys(), curr.keys())
+
+                    if all(prev[f] == curr[f] for f in filenames):
+                        # print("Same")
+                        pass
+                    elif all(prev[f] >= curr[f] for f in filenames):
+                        # print("Old is bigger")
+                        pass
+                    elif all(prev[f] <= curr[f] for f in filenames):
+                        # print("New is bigger")
+                        root[p] = (batch, patient)
+                    else:
+                        print("Mixed")
+                        assert p == "90084209"
+                        if len(os.listdir(os.path.join(src, batch, patient))) > len(os.listdir(os.path.join(src, *root[p]))):
+                            root[p] = (batch, patient)
+
+                    print()
+
+                else:
+                    root[p] = (batch, patient)
+
+        for p in root:
+            root[p] = os.path.join(*root[p])
+
+        os.makedirs(dest, exist_ok=True)
+        with open(os.path.join(dest, "root.tsv"), "w") as f:
+            for p in sorted(root):
+                f.write("{}\t{}\n".format(p, root[p]))
+
+    logo = PIL.Image.open(os.path.join(os.path.dirname(__file__), "phillips.png"))
+    logo = np.array(logo)
+
+    if patients is None:
+        patients = sorted(root.keys())
+    print(patients)
+    for p in tqdm.tqdm(patients):
+        os.makedirs(os.path.join(dest, p), exist_ok=True)
+        with open(os.path.join(dest, p, "videos.tsv"), "w") as f:
+            for filename in tqdm.tqdm(sorted(os.listdir(os.path.join(src, root[p]))), leave=False):
+                if os.path.isfile(os.path.join(dest, p, "full", filename[3:] + ".avi")) or \
+                   os.path.isfile(os.path.join(dest, p, "color", filename[3:] + ".avi")):
+                   # skip if done
+                    continue
+
+                ds = pydicom.dcmread(os.path.join(src, root[p], filename), force=True)
+
+                try:
+                    video = ds.pixel_array
+                except AttributeError:
+                    continue
+                if len(video.shape) in (2, 3):
+                    continue
+
+                res = skimage.feature.match_template(video[0, :, :, :], logo)
+                i, j, _ = np.unravel_index(np.argmax(res), res.shape)
+
+                assert len(ds.SequenceOfUltrasoundRegions) == 1
+                region = ds.SequenceOfUltrasoundRegions[0]
+                x0 = region.RegionLocationMinX0
+                y0 = region.RegionLocationMinY0
+                x1 = region.RegionLocationMaxX1
+                y1 = region.RegionLocationMaxY1
+
+                video = pydicom.pixel_data_handlers.util.convert_color_space(video, ds.PhotometricInterpretation, "RGB")
+                video = video.transpose((3, 0, 1, 2))
+
+                small = video[:, :, y0:(y1 + 1), x0:(x1 + 1)]
+                _, _, h, w = small.shape
+                small = small[:, :, :, ((w - h) // 2):(h + (w - h) // 2)]
+                small = np.array(list(map(lambda x: cv2.resize(x, (112, 112), interpolation=cv2.INTER_AREA), small.transpose((1, 2, 3, 0))))).transpose((3, 0, 1, 2))
+
+                if i > 250:
+                    # Upside-down
+                    video = video[:, :, ::-1, :]
+                    small = small[:, :, ::-1, :]
+
+                fps = 1000 / float(ds.FrameTime)
+
+                assert filename[:3] == "IMG"
+                if ds.UltrasoundColorDataPresent == 0:
+                    echonet.utils.savevideo(os.path.join(dest, p, filename[3:] + ".avi"), small, fps)
+                    os.makedirs(os.path.join(dest, p, "full"), exist_ok=True)
+                    echonet.utils.savevideo(os.path.join(dest, p, "full", filename[3:] + ".avi"), video, fps)
+                else:
+                    os.makedirs(os.path.join(dest, p, "color"), exist_ok=True)
+                    echonet.utils.savevideo(os.path.join(dest, p, "color", filename[3:] + ".avi"), video, fps)
+
+        with open(os.path.join(dest, p, "complete"), "w") as f:
+            # write file to mark complete
+            f.write(p)
+            f.write("\n")
+
     return
     os.makedirs(dest, exist_ok=True)
 

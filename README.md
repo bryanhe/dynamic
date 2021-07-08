@@ -102,7 +102,11 @@ pip install -e .
 rclone copy -P box:"Pediatric Echos" .  # Current location: sherlock:/scratch/users/bryanhe/pediatric_echos/
 scripts/process_pediatric.py /scratch/users/bryanhe/pediatric_echos/ data/pediatric/
 scripts/cross_validate_pediatric.py data/pediatric/
-scripts/process_phn.py /oak/stanford/groups/jamesz/pediatric_heart_network/ data/phn/
+scripts/process_phn.py $OAK/pediatric_heart_network data/pediatric_heart_network_processed/ --patients 0  # Generate patient list (actually just errors on a non-existent patient)
+for patient in `awk '{ print $1 }' data/pediatric_heart_network_processed/root.tsv`
+do
+    shbatch --partition=jamesz,owners,normal --time=00:10:00 --cpus-per-task=5 -- "conda activate echonet; scripts/process_phn.py $OAK/pediatric_heart_network data/pediatric_heart_network_processed/ --patients ${patient}"
+done
 
 TODO: merge scripts/cross_validate_pediatric.py into scripts/process_pediatric.py
 TODO: device in video and segmentation is messed up
