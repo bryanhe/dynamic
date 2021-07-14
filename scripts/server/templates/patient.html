@@ -2,23 +2,23 @@
 <html>
 
 <head>
-  <title>EF Labeling</title>
+  <title>Patient {{ patient }}</title>
+
+  <style>
+    span.inline-block {
+      display: inline-block;
+    }
+    </style>
 
   <script>
     function send() {
       message = "";
-      for (x of ["EF", "Interpretable"]) {
-        var radios = document.getElementsByName(x);
-        for (var i = 0, length = radios.length; i < length; i++) {
-          if (radios[i].checked) {
-            message += x + ":" + radios[i].value + "\n";
-
-            // only one radio can be logically checked, don't check the rest
-            break;
-          }
+      for (x of [{% for (video, view) in videos %}"{{ video }}",{% endfor %}]) {
+        var select = document.getElementById(x);
+        if (select.selectedIndex != 0) {
+            message += (x + "\t" + select.options[select.selectedIndex].value + "\n");
         }
       }
-      console.log(message)
       if (message != "") {
         const http = new XMLHttpRequest();
         http.open("POST", "");
@@ -30,50 +30,40 @@
 
 <body>
   <center>
-    Patient #{{ index }} / {{ total }}
+    Patient #{{ index + 1 }} / {{ total }}
     <br />
     {% if prev != None %}
-    &lt; <a href="/{{ user }}/{{ prev }}">Prev</a>
+    &lt; <a href="/patient/{{ prev }}">Prev</a>
     {% endif %}
-    | <a href="/{{ user }}">Home</a> |
+    | <a href="/">Home</a> |
     {% if next != None %}
-    <a href="/{{ user }}/{{ next }}">Next</a> &gt;
+    <a href="/patient/{{ next }}">Next</a> &gt;
     {% endif %}
 
     <br />
     <br />
 
     {% for (video, view) in videos %}
-    <video width="{{ width }}" height="{{ height }}" controls loop autoplay>
-      <source src="/video/{{ patient }}/{{ video }}" type="video/webm">
-      Your browser does not support the video tag.
-    </video>
+    <span class="inline-block">
+      <a href="/video/{{ patient }}/{{ video }}">{{ video.split(".")[0] }}</a>
+      <br>
+      <video width="400px" height="300px" controls loop autoplay>
+        <source src="/video/{{ patient }}/{{ video }}" type="video/webm">
+        Your browser does not support the video tag.
+      </video>
+
+      <br>
+
+      <select id="{{ video }}" onchange="send()">
+        {% for v in views %}
+        <option value="{{ v }}" {% if video in view_of_video and view_of_video[video] == v %}selected="selected"{% endif %}>{{ v }}</option>
+        {% endfor %}
+      </select>
+
+      <br>
+      <br>
+      <br>
+    </span>
     {% endfor %}
-
-    <br />
-    <br />
-
-    <table onclick="send()">
-      {% for (class, value) in labels %}
-      <tr>
-        <th>{{ class }}</th>
-        <td>
-        </td>
-        <td>
-          <table>
-            {% for v in value %}
-            <tr>
-              <td>
-                <input type="radio" id="{{ class }}_{{ v }}" name="{{ class }}" value="{{ v }}" {% if class in data and data[class] == v %} checked {% endif %}>
-                <label for="{{ class }}_{{ v }}">{{ v }}</label>
-              </td>
-            </tr>
-            {% endfor %}
-          </table>
-        </td>
-      </tr>
-      {% endfor %}
-    </table>
-  </center>
 </body>
 </html>
