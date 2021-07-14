@@ -37,10 +37,10 @@ def main(src="output/er/ef"):
     ef = collections.defaultdict(dict)
     interpretable = collections.defaultdict(dict)
     # with open("data/er/split_0/FileList.csv") as f:
-    with open("data/er/FileList.csv") as f:
+    with open("data/er/split_0/FileList.csv") as f:
         assert f.readline() == "FileName,EF,Interpretable,Split\n"
         for line in f:
-            filename, e, i = line.strip().split(",")
+            filename, e, i, _ = line.strip().split(",")
             ef[filename] = e
             interpretable[filename] = i
 
@@ -92,7 +92,7 @@ def main(src="output/er/ef"):
 
         # breakpoint()
         print("EF")
-        for (score, (p, l, h)) in zip(["AUC", "CE"], bootstrap({patient: 1 if ef[patient] == "Normal" else 0 for patient in ef if interpretable[patient] != "No"}, {patient: ef_hat[patient] for patient in ef_hat if interpretable[patient] != "No"})):
+        for (score, (p, l, h)) in zip(["AUC", "CE"], bootstrap({patient: 1 if ef[patient] == "1" else 0 for patient in ef if interpretable[patient] != "0"}, {patient: ef_hat[patient] for patient in ef_hat if interpretable[patient] != "0"})):
             print("{}: {:.2f} ({:.2f} - {:.2f})".format(score, p, l, h))
         print()
 
@@ -105,8 +105,8 @@ def main(src="output/er/ef"):
             print("Bin #{}".format(bin + 1))
             print({patient for patient in ef if interpretable[patient] != "No" and patient in interpretable_hat and thresh[bin] <= interpretable_hat[patient] < thresh[bin + 1]})
             for (score, (p, l, h)) in zip(["AUC", "CE"], bootstrap(
-                    {patient: 1 if ef[patient] == "Normal" else 0 for patient in ef if interpretable[patient] != "No" and patient in interpretable_hat and thresh[bin] <= interpretable_hat[patient] < thresh[bin + 1]},
-                    {patient: ef_hat[patient] for patient in ef_hat if interpretable[patient] != "No" and patient in interpretable_hat and thresh[bin] <= interpretable_hat[patient] < thresh[bin + 1]},
+                    {patient: 1 if ef[patient] == "1" else 0 for patient in ef if patient in interpretable_hat and thresh[bin] <= interpretable_hat[patient] < thresh[bin + 1]},
+                    {patient: ef_hat[patient] for patient in ef_hat if patient in interpretable_hat and thresh[bin] <= interpretable_hat[patient] < thresh[bin + 1]},
                 )):
                 print("{}: {:.2f} ({:.2f} - {:.2f})".format(score, p, l, h))
             print()
@@ -181,7 +181,7 @@ def main(src="output/er/ef"):
 
 
         print("Interpretable")
-        for (score, (p, l, h)) in zip(["AUC", "CE"], bootstrap({patient: 1 if interpretable[patient] != "No" else 0 for patient in interpretable}, interpretable_hat)):
+        for (score, (p, l, h)) in zip(["AUC", "CE"], bootstrap({patient: 1 if interpretable[patient] != "0" else 0 for patient in interpretable}, interpretable_hat)):
             print("{}: {:.2f} ({:.2f} - {:.2f})".format(score, p, l, h))
         print()
 
