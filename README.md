@@ -105,8 +105,16 @@ scripts/cross_validate_pediatric.py data/pediatric/
 scripts/process_phn.py $OAK/pediatric_heart_network data/pediatric_heart_network_processed/ --patients 0  # Generate patient list (actually just errors on a non-existent patient)
 for patient in `awk '{ print $1 }' data/pediatric_heart_network_processed/root.tsv`
 do
-    shbatch --partition=jamesz,owners,normal --time=00:10:00 --cpus-per-task=5 -- "conda activate echonet; scripts/process_phn.py $OAK/pediatric_heart_network data/pediatric_heart_network_processed/ --patients ${patient}"
+    shbatch --partition=jamesz,owners,normal --time=00:60:00 --cpus-per-task=5 -- "conda activate echonet; /scratch/users/bryanhe/anaconda3/envs/echonet/bin/python scripts/process_phn.py $OAK/pediatric_heart_network data/pediatric_heart_network_processed/ --patients ${patient}"
 done
+
+awk '{ print $1 }' data/pediatric_heart_network_processed/root.tsv | xargs -n 10 | while read patients;
+do
+    shbatch --partition=jamesz,owners,normal --time=00:60:00 --cpus-per-task=10 -- "conda activate echonet; /scratch/users/bryanhe/anaconda3/envs/echonet/bin/python scripts/process_phn.py $OAK/pediatric_heart_network data/pediatric_heart_network_processed/ ${patients}"
+done
+scripts/view.py data/pediatric_heart_network_processed/ 
+root=data/pediatric_heart_network_processed; for view in a2c a4c plax subcostal other; do mkdir -p ${root}/view/${view}; for i in `cat ${root}/view/${view}.txt`; do ln -s ../../${i/\//\/full\/} ${root}/view/${view}/${i/\//_}; done; done
+
 
 TODO: merge scripts/cross_validate_pediatric.py into scripts/process_pediatric.py
 TODO: device in video and segmentation is messed up
