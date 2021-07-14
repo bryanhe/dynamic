@@ -18,7 +18,7 @@ SAVE_DIR = None
                 type=click.Path(file_okay=False))
 @click.option('--host', default='0.0.0.0')
 @click.option('-p', '--port', type=int, default=8000)
-def main(data_dir, save_dir, host, port, users=["BH", "DD"]):
+def main(data_dir, save_dir, host, port):
     global DATA_DIR
     global SAVE_DIR
     DATA_DIR = data_dir
@@ -27,61 +27,49 @@ def main(data_dir, save_dir, host, port, users=["BH", "DD"]):
 
 @app.route("/")
 def _index():
-    return index("")
+    patients = sorted(os.listdir(os.path.join(DATA_DIR, "Videos")))
+    return flask.render_template("index.html", todo=patients)
 
-@app.route("/<string:user>/")
-def index(user):
-    print(DATA_DIR)
-    print(os.listdir(DATA_DIR))
-    videos = os.listdir(DATA_DIR)
-    videos = sorted(map(lambda v: os.path.splitext(v)[0], videos))
-    try:
-        pkl = set(map(lambda x: os.path.splitext(x)[0], os.listdir(os.path.join(SAVE_DIR, user))))
-    except FileNotFoundError:
-        pkl = set()
-    todo = []
-    done = []
-    for v in videos:
-        if v in pkl:
-            done.append(v)
-        else:
-            todo.append(v)
-    
-    return flask.render_template("index.html", user=user, todo=todo, done=done)
-
-@app.route("/<string:user>/<string:video>", methods=["GET", "POST"])
-def label(user, video):
-    output = os.path.join(SAVE_DIR, user, "{}.pkl".format(video))
+@app.route("/patient/<string:patient>", methods=["GET", "POST"])
+def patient(patient):
+    output = os.path.join(SAVE_DIR, "{}.pkl".format(patient))
     if flask.request.method == "GET":
-        data = {}
+        view = {}
         if os.path.isfile(output):
             try:
-                with open(output, "rb") as f:
-                    data = pickle.load(f)
-                print(data)
-            except:
-                print("except")
+                with open(output, "r") as f:
+                    for line in f:
+                        video, v = line.split("\t")
+                        view[video] = v
+            except Exception as e:
+                print(e)
                 data = {}
 
-        videos = os.listdir(DATA_DIR)
-        videos = sorted(map(lambda v: os.path.splitext(v)[0], videos))
-        index = videos.index(video)
-        total = len(videos)
-        prev = None
-        if index != 0:
-            prev = videos[index - 1]
-        next = None
-        if index + 1 < len(videos):
-           next = videos[index + 1]
-        capture = cv2.VideoCapture(os.path.join(DATA_DIR, video + ".webm"))
-        fps = capture.get(cv2.CAP_PROP_FPS)
-        height = capture.get(cv2.CAP_PROP_FRAME_HEIGHT)
-        width = capture.get(cv2.CAP_PROP_FRAME_WIDTH)
+        # videos = os.listdir(DATA_DIR)
+        # videos = sorted(map(lambda v: os.path.splitext(v)[0], videos))
+        # index = videos.index(video)
+        # total = len(videos)
+        # prev = None
+        # if index != 0:
+        #     prev = videos[index - 1]
+        # next = None
+        # if index + 1 < len(videos):
+        #    next = videos[index + 1]
+        # capture = cv2.VideoCapture(os.path.join(DATA_DIR, video + ".webm"))
+        # fps = capture.get(cv2.CAP_PROP_FPS)
+        # height = capture.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        # width = capture.get(cv2.CAP_PROP_FRAME_WIDTH)
+        videos = []
+        for file in sorted(os.listdir(os.path.join(DATA_DIR, "Videos", patient))):
+            if file not in ["full", "color", "complete.txt"]:
+                videos.append(file)
+        for i in range(len(videos)):
+            if videos[i] in view:
+                videos[i] = (videos[i], view[videos[i]])
+            else:
+                videos[i] = (videos[i], "-- Select View --")
 
-        labels = [("EF", ("Normal", "Slightly Reduced", "Moderately Reduced", "Severely Reduced")),
-                  ("Interpretable", ("Yes", "Partial", "No"))]
-
-        return flask.render_template("label.html", user=user, video=video, index=(index + 1), total=total, prev=prev, next=next, data=data, height=height, width=width, labels=labels)
+        return flask.render_template("patient.html", patient=patient, videos=videos)
     else:
         data = flask.request.data
         data = data.strip().decode("utf-8").split("\n")
@@ -98,9 +86,9 @@ def label(user, video):
         return ""
 
 
-@app.route("/video/<string:video>")
-def video(video):
-    return flask.send_file(os.path.abspath(os.path.join(DATA_DIR, video)))
+@app.route("/video/<string:patient>/<string:video>")
+def video(patient, video):
+    return flask.send_file(os.path.abspath(os.path.join(DATA_DIR, "Videos", patient, "full", video)))
 
 if __name__ == "__main__":
     main()

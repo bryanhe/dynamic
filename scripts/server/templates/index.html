@@ -2,29 +2,22 @@
 <html>
 
 <head>
-  <title>EF Labeling</title>
+  <title>View Labeling</title>
 </head>
 
 <body>
-  <select name="users" onchange="location=this.options[this.selectedIndex].value;">
-    <option value="/">--Select User--</option>
-    <option value="/BH" {% if user == "BH"%} selected {% endif %}>BH</option>
-    <option value="/DD" {% if user == "DD"%} selected {% endif %}>DD</option>
-  </select>
-  {% if user != "" %}
-  <h1> Unlabeled Videos ({{ todo|length }} / {{ todo|length + done|length }})</h1>
+  <h1> Unlabeled Patients ({{ todo|length }} / {{ todo|length + done|length }})</h1>
   <ul>
-    {% for video in todo %}
-    <li><a href="/{{ user }}/{{ video }}">{{ video }}</a></li>
+    {% for patient in todo %}
+    <li><a href="/patient/{{ patient }}">{{ patient }}</a></li>
     {% endfor %}
   </ul>
-  <h1> Labeled Videos ({{ done|length }} / {{ todo|length + done|length }})</h1>
+  <h1> Labeled Patients ({{ done|length }} / {{ todo|length + done|length }})</h1>
   <ul>
-    {% for video in done %}
-    <li><a href="/{{ user }}/{{ video }}">{{ video }}</a></li>
+    {% for patient in done %}
+    <li><a href="/patient{{ patient }}">{{ patient }}</a></li>
     {% endfor %}
   </ul>
-  {% endif %}
 </body>
 </html>
 
