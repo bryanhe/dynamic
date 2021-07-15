@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Patient {{ patient }}</title>
+
+  <style>
+    span.inline-block {
+      display: inline-block;
+    }
+    </style>
+
+  <script>
+    function send() {
+      message = "";
+      for (x of [{% for (video, view) in videos %}"{{ video }}",{% endfor %}]) {
+        var select = document.getElementById(x);
+        if (select.selectedIndex != 0) {
+            message += (x + "\t" + select.options[select.selectedIndex].value + "\n");
+        }
+      }
+      if (message != "") {
+        const http = new XMLHttpRequest();
+        http.open("POST", "");
+        http.send(message);
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <center>
+    Patient #{{ index + 1 }} / {{ total }}
+    <br />
+    {% if prev != None %}
+    &lt; <a href="/patient/{{ prev }}">Prev</a>
+    {% endif %}
+    | <a href="/">Home</a> |
+    {% if next != None %}
+    <a href="/patient/{{ next }}">Next</a> &gt;
+    {% endif %}
+
+    <br />
+    <br />
+
+    {% for (video, view) in videos %}
+    <span class="inline-block">
+      <a href="/video/{{ patient }}/{{ video }}">{{ video.split(".")[0] }}</a>
+      <br>
+      <video width="400px" height="300px" controls loop autoplay>
+        <source src="/video/{{ patient }}/{{ video }}" type="video/webm">
+        Your browser does not support the video tag.
+      </video>
+
+      <br>
+
+      <select id="{{ video }}" onchange="send()">
+        {% for v in views %}
+        <option value="{{ v }}" {% if video in view_of_video and view_of_video[video] == v %}selected="selected"{% endif %}>{{ v }}</option>
+        {% endfor %}
+      </select>
+
+      <br>
+      <br>
+      <br>
+    </span>
+    {% endfor %}
+</body>
+</html>
