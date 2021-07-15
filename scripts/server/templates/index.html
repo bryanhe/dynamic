@@ -6,6 +6,12 @@
 </head>
 
 <body>
+  <h1> Views </h1>
+  <ul>
+    {% for view in views %}
+    <li><a href="/view/{{ view }}/{{ first }}">{{ view }}</a></li>
+    {% endfor %}
+  </ul>
   <h1> Unlabeled Patients ({{ todo|length }} / {{ todo|length + done|length }})</h1>
   <ul>
     {% for patient in todo %}
