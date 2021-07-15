@@ -110,7 +110,7 @@ done
 
 awk '{ print $1 }' data/pediatric_heart_network_processed/root.tsv | xargs -n 10 | while read patients;
 do
-    shbatch --partition=jamesz,owners,normal --time=00:60:00 --cpus-per-task=10 -- "conda activate echonet; /scratch/users/bryanhe/anaconda3/envs/echonet/bin/python scripts/process_phn.py $OAK/pediatric_heart_network data/pediatric_heart_network_processed/ ${patients}"
+    shbatch --partition=jamesz,owners,normal --time=00:60:00 --cpus-per-task=16 -- "conda activate echonet; /scratch/users/bryanhe/anaconda3/envs/echonet/bin/python scripts/process_phn.py $OAK/pediatric_heart_network data/pediatric_heart_network_processed/ ${patients}"
 done
 scripts/view.py data/pediatric_heart_network_processed/ 
 root=data/pediatric_heart_network_processed; for view in a2c a4c plax subcostal other; do mkdir -p ${root}/view/${view}; for i in `cat ${root}/view/${view}.txt`; do ln -s ../../${i/\//\/full\/} ${root}/view/${view}/${i/\//_}; done; done
